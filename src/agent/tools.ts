@@ -2,7 +2,7 @@
 // dashboard and Decoy's screen animate it. Real where a browser can reach the real thing:
 // check_domain uses the live RDAP registry; web_search uses Tavily when a key is set.
 import type { CallEvent } from '../events/types';
-import { CUSTOMER_ID, officialFor, PENDING_TRANSFERS, SCAM_NUMBERS } from './data';
+import { CUSTOMER_ID, PENDING_TRANSFERS, SCAM_NUMBERS } from './data';
 
 export type Emit = (ev: CallEvent) => void;
 type Result = Record<string, unknown>;
@@ -34,16 +34,20 @@ export async function runTool(
   return result;
 }
 
-// ---------- real checks on Yun's browser backend (backend/server.py) ----------
+// ---------- generic tools on the real browser backend (backend/server.py) ----------
 
-/** The real-browser checks the agent uses when the backend is connected (?browser). */
-export const REAL_CHECKS = ['verify_caller_number', 'check_bank_policy', 'check_link'] as const;
+/** The browser tools the backend offers, as function-calling schemas (GET /browser/tools). */
+export async function browserToolSchemas(): Promise<{ name: string; description: string; parameters: object }[]> {
+  const r = await fetch('/browser/tools');
+  if (!r.ok) throw new Error(`browser tools ${r.status}`);
+  return r.json();
+}
 
 /**
- * Runs one of Yun's checks in the real Chrome. Passing our tool_call id lets Decoy's screen show
+ * Runs one browser tool in the real Chrome. Passing our tool_call id lets Decoy's screen show
  * this run. ok:false (site down, timeout) comes back as an error result, not an exception.
  */
-export async function realCheck(name: (typeof REAL_CHECKS)[number], args: Record<string, unknown>, id: string): Promise<Result> {
+export async function browserTool(name: string, args: Record<string, unknown>, id: string): Promise<Result> {
   const r = await fetch(`/browser/tools/${name}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -59,25 +63,6 @@ export async function realCheck(name: (typeof REAL_CHECKS)[number], args: Record
 export function lookupCaller(number: string): Result {
   const hit = SCAM_NUMBERS[number];
   return hit ? { known_scam: true, ...hit } : { known_scam: false, reputation: 0.5, reports: 0 };
-}
-
-export function openOfficialPage(claimedOrg: string): Result {
-  const o = officialFor(claimedOrg)!;
-  return {
-    title: o.title,
-    url: `https://${o.url}`,
-    excerpt: o.excerpt,
-    highlight: o.number,
-    summary: `Official number on ${o.url.split('/')[0]}: ${o.number}`,
-    source: `saved copy of the live page, ${o.captured}`,
-  };
-}
-
-export function verifyInstitution(claimedOrg: string, callerNumber: string): Result {
-  const o = officialFor(claimedOrg);
-  if (!o) return { official_number: null, match: null, claimed_org: claimedOrg };
-  const digits = (s: string) => s.replace(/\D/g, '').replace(/^1/, '');
-  return { official_number: o.number, match: digits(o.number) === digits(callerNumber) };
 }
 
 export function pendingTransfers(): Result {

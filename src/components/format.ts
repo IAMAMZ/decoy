@@ -31,9 +31,13 @@ export const TOOL_LABEL: Record<string, string> = {
   log_intel: 'Log intel',
   generate_report: 'Generate report',
   analyze_turn: 'Higgs brain · assess the line',
-  verify_caller_number: 'Real browser · official number on rbc.com',
-  check_bank_policy: "Real browser · RBC's own fraud rules",
-  check_link: 'Real browser · registry + open the link',
+  investigate: 'Higgs investigator · checks the claim on the web',
+  'web.open_page': 'Real browser · open page',
+  'web.read_page': 'Real browser · read page',
+  'web.find_on_page': 'Real browser · find on page',
+  'web.click': 'Real browser · click',
+  'web.check_domain': 'Real browser · domain registration',
+  'web.web_search': 'Real browser · web search',
   web_search: 'Search the web',
   open_page: 'Open web page',
   check_domain: 'Check domain registration',
@@ -75,13 +79,11 @@ export function describeResult(tool: string, args: Record<string, any>, r: any):
       return { text: `Stored as ${r.record_id}`, tone: 'ok' };
     case 'generate_report':
       return { text: `Report ${r.report_id} filed`, tone: 'ok' };
-    // Yun's real-browser checks: the backend writes the summary; the verdict sets the colour.
-    case 'verify_caller_number':
-    case 'check_bank_policy':
-    case 'check_link': {
-      if (r.error) return { text: r.summary ?? `${tool} couldn't finish`, tone: 'neutral' };
-      const fine = ['match', 'official', 'no_policy_found'].includes(r.verdict);
-      return { text: r.summary, tone: fine ? 'ok' : 'danger' };
+    // The investigator's verdict on a caller's claim: contradicted = evidence of a scam.
+    case 'investigate': {
+      if (r.error) return { text: r.summary || "The investigator couldn't finish", tone: 'neutral' };
+      const tone: Tone = r.verdict === 'contradicted' ? 'danger' : r.verdict === 'confirmed' ? 'ok' : 'neutral';
+      return { text: `${r.summary}${r.steps ? ` · ${r.steps} browser steps` : ''}`, tone };
     }
     case 'analyze_turn': {
       if (r.error) return { text: r.summary, tone: 'neutral' };
@@ -98,6 +100,8 @@ export function describeResult(tool: string, args: Record<string, any>, r: any):
     case 'check_domain':
       return { text: r.summary ?? 'Done', tone: r.error ? 'neutral' : 'danger' };
     default:
+      // The investigator's individual browser steps (web.open_page, web.find_on_page, …).
+      if (tool.startsWith('web.')) return { text: r.summary ?? 'Done', tone: 'neutral' };
       return { text: JSON.stringify(r), tone: 'neutral' };
   }
 }

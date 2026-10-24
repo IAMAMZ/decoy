@@ -28,11 +28,11 @@ SEND_TIMEOUT_S = 5  # a client that can't take a message this long is dropped
 MAX_QUEUED_FRAMES = 2  # a slow client skips frames instead of falling behind
 CURSOR_MOVE_S = 0.75  # matches the frontend cursor transition
 
-# Cookie banners cover the bottom of the screen (RBC's covers about a third). Hide them instead of
-# clicking: RBC's only buttons are "Accept All", "Manage Settings" and an X whose label says closing
-# accepts all cookies. Hiding makes no consent choice either way. Containers of common consent tools:
+# Cookie banners cover the bottom of the screen. Hide them instead of clicking: many offer only
+# "Accept All", "Manage Settings" and an X that itself means accepting all cookies. Hiding makes no
+# consent choice either way. Containers of common consent tools:
 COOKIE_BANNERS = [
-    "#onetrust-consent-sdk",  # OneTrust (RBC)
+    "#onetrust-consent-sdk",  # OneTrust
     "#CybotCookiebotDialog",  # Cookiebot
     "#truste-consent-track",  # TrustArc
     ".qc-cmp2-container",  # Quantcast
@@ -158,7 +158,7 @@ async def navigate(url: str) -> bool:
     broadcast({"type": "address", "text": shown(url), "typing": False})
     broadcast({"type": "loading", "on": True})
     try:
-        # Two tries: a page's own late redirect (RBC's homepage does one) can interrupt the first.
+        # Two tries: a page's own late redirect (some homepages do one) can interrupt the first.
         for attempt in range(2):
             try:
                 await page.goto(url, timeout=15000, wait_until="domcontentloaded")

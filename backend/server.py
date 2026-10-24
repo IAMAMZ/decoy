@@ -4,7 +4,7 @@ Run from the repo root:   python backend/server.py   (port 8001)
 
   browser.py   Chrome, the stream to the screen, page primitives
   routes/      HTTP and WebSocket: /browser/ws, /browser/open, /browser/tools
-  tools/       the checks (RBC demo), registered in tools/__init__.py
+  tools/       generic browser tools, registered in tools/__init__.py
 """
 
 import asyncio

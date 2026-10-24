@@ -54,43 +54,47 @@ Check it's connected: Decoy's screen says **"live · real Chrome"** in its top-r
 
 Before the call starts, the "Start call" card covers the page; start the call to use the browser.
 
-Cookie banners are hidden in Decoy's Chrome, not clicked: no consent is given or refused. RBC's banner has no reject option (its X says closing accepts all cookies), and it covered the bottom third of the screen. The list of hidden banner containers is `COOKIE_BANNERS` in `backend/browser.py`.
+Cookie banners are hidden in Decoy's Chrome, not clicked: no consent is given or refused. Many banners have no reject option (their X means accepting all cookies), and they cover the bottom of the screen. The list of hidden banner containers is `COOKIE_BANNERS` in `backend/browser.py`.
 
-Open a page from a script or terminal (for testing, until the agent drives the browser):
+Open a page from a script or terminal (for testing):
 
 ```bash
-curl -X POST "http://127.0.0.1:8001/browser/open?url=rbcroyalbank.com/customer-service/index.html"
+curl -X POST "http://127.0.0.1:8001/browser/open?url=example.com"
 ```
 
-## Fraud checks (tools)
+## How Decoy checks a caller's claims
 
-Three checks for the RBC impersonation demo. Each runs on the real browser, so Decoy's screen shows it opening the page and highlighting the evidence.
+Nothing in the code knows about any bank. When the caller names an organisation, asks for something, or gives a link, the agent hands a plain-language task to the **Higgs investigator** (`src/agent/investigator.ts`): a second, text-only Higgs Realtime session with the generic browser tools below. It decides what to open, reads, clicks and highlights the evidence, then calls `report` with a verdict:
 
-| Tool | Args | What it does | Verdicts |
-| --- | --- | --- | --- |
-| `verify_caller_number` | `number` | Finds RBC's official number on rbc.com's fraud page and compares it with the caller's | `match`, `mismatch` |
-| `check_bank_policy` | `claim` (what the caller asked for) | Finds RBC's own "RBC will never ask you to…" line for it: e-Transfer / safe account, one-time code, remote access, PIN, password, confirming account details | `against_rbc_policy`, `no_policy_found` |
-| `check_link` | `url` | Is it an RBC domain, is it registered and how old (RDAP), does it open | `official`, `not_registered`, `new_domain`, `lookalike`, `not_rbc` |
+| When | Task | Verdicts |
+| --- | --- | --- |
+| The caller first names who they claim to be | Find that organisation's official number on its official site and compare it with the caller ID | `confirmed`, `contradicted`, `inconclusive` |
+| The caller asks for a safe-account transfer, payment, remote access or gift cards | Find the organisation's own guidance on whether it would ever ask that | same |
+| The caller gives a link | Check the domain's registration and whether it's the organisation's official site | same |
+
+On the dashboard each task is an `investigate` call, with every browser step it took (`web.open_page`, `web.click`, `web.find_on_page`, …) listed underneath; Decoy's screen shows each step live. Tested with a TD Bank scam call: it opened tdbank.com, clicked "Protect against fraud", highlighted TD's fraud line and reported the caller's number as contradicted, in 4 steps and about 10 s.
+
+## Browser tools
+
+| Tool | Args | What it does |
+| --- | --- | --- |
+| `open_page` | `url` | Open a page; returns its title and visible text |
+| `read_page` | `offset` | The current page's text (from an offset) and its links |
+| `find_on_page` | `text` or `pattern` | Highlight the first visible match on screen; returns it and the sentence around it |
+| `click` | `text` | Click a link or button by its visible label |
+| `check_domain` | `domain` | Registration (RDAP: registered? when? registrar?), then try to open it |
+| `web_search` | `query` | Tavily search, only if `TAVILY_API_KEY` is set in `backend/.env` |
 
 Call them over HTTP. From the frontend use the same-origin path `/browser/tools/...` (Vite proxies it):
 
 ```bash
 curl http://127.0.0.1:8001/browser/tools          # list the tools as function-calling schemas
-curl -X POST http://127.0.0.1:8001/browser/tools/verify_caller_number \
-  -H "Content-Type: application/json" \
-  -d '{"id": "t3", "args": {"number": "+1 (647) 555-0199"}}'
-```
-
-```json
-{"id": "t3", "ok": true, "verdict": "mismatch",
- "summary": "+1 (647) 555-0199 is not RBC's official number (1-800-769-2511)",
- "official": "1-800-769-2511", "excerpt": "...", "source": "https://www.rbc.com/cyber-security/how-rbc-keeps-you-safe/index.html"}
+curl -X POST http://127.0.0.1:8001/browser/tools/find_on_page   -H "Content-Type: application/json"   -d '{"id": "t3", "args": {"text": "never ask"}}'
 ```
 
 - `id` is optional. Pass the dashboard's `tool_call` id so Decoy's screen shows this run under the same id.
-- `ok: false` means the check couldn't finish (site down, 30 s timeout); it still returns 200 with a `summary`. Bad calls get 400 (missing argument) or 404 (unknown tool).
-- The caller of the tool (the agent / orchestrator) injects the `tool_call` started/done events for the dashboard.
-- The RBC pages and wording were checked on Oct 24, 2026; they're constants at the top of `backend/tools/rbc.py`.
+- `ok: false` means the tool couldn't finish (site down, 30 s timeout); it still returns 200 with a `summary`. Bad calls get 400 (missing argument) or 404 (unknown tool).
+- The tools never log in, type into forms or submit anything.
 
 ## Backend layout
 
@@ -98,12 +102,13 @@ curl -X POST http://127.0.0.1:8001/browser/tools/verify_caller_number \
 backend/
 ├─ server.py        entry point: FastAPI app on port 8001
 ├─ browser.py       Chrome, the stream to Decoy's screen, page primitives (navigate, find + highlight), a person's input
+├─ standby.html     the start page (decoy://standby)
 ├─ routes/
 │  ├─ browser.py    /browser/ws (stream + input), /browser/open
 │  └─ tools.py      GET /browser/tools, POST /browser/tools/{name}
 └─ tools/
    ├─ __init__.py   REGISTRY: add a tool here and the routes pick it up
-   ├─ rbc.py        the three RBC checks
+   ├─ web.py        the generic browser tools
    └─ rdap.py       domain registration lookup
 ```
 
@@ -111,7 +116,7 @@ backend/
 
 1. **Backend:** write `async def my_check(args, rid) -> dict` in `backend/tools/`, then add a `Tool(...)` to `REGISTRY` in `backend/tools/__init__.py`. It's served at `POST /browser/tools/my_check` with no route changes.
 2. **Warm its pages:** if the tool opens fixed pages, list them in the Tool's `warm=(...)`. At startup the backend loads them once in a hidden tab, so the first check during a call doesn't pay for a cold page load. Pages that come from the call (a link the caller gives) can't be warmed.
-3. **Frontend:** add the name to `REAL_CHECKS` in `src/agent/tools.ts`, call it from `src/agent/useAgent.ts` with `tools.realCheck(...)` (only when `bridge.connected`), and add its label and result text to `TOOL_LABEL` / `describeResult` in `src/components/format.ts`.
+3. **Frontend:** nothing to register: the investigator reads the tool list from `GET /browser/tools` when it starts. Add a label for `web.my_check` to `TOOL_LABEL` in `src/components/format.ts` so the dashboard names it nicely.
 
 The screen's page size (1280×720) lives in three places that must match: `VIEWPORT` in `backend/browser.py`, `PAGE_W`/`PAGE_H` in `src/components/LiveScreen.tsx`, and the `.as-shot` aspect-ratio in `src/styles.css`.
 
