@@ -77,4 +77,4 @@ The phone asks the customer whether Decoy should take over. **Customer** accepts
 | `rbc-secure-verify.com` | intel: url |
 | `987654321` | intel: mule account |
 | `647 555 0142` | intel: callback number |
-| Three thousand to J. Ortiz | matches the pending `tx_8842` transfer, which gets frozen |
+| "three thousand dollars" | amount taken from the call; that pending transfer gets frozen and appears in the summary |
