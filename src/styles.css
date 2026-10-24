@@ -659,3 +659,11 @@ kbd {
   .live-grid { grid-template-columns: 1fr; grid-template-rows: none; }
   .live-grid .cell { max-height: 460px; }
 }
+
+/* ---------- stage center: optional real screen above transcript + tool calls ---------- */
+.stage-center { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.stage-center > .live-grid { flex: 1; }
+.stage-center.with-screen > .agent-screen { flex: 0 0 54%; min-height: 0; padding: 12px 20px 8px; gap: 8px; border-bottom: 1px solid var(--line); }
+.stage-center.with-screen .as-caption { font-size: 14px; }
+.stage-center.with-screen .as-view { display: flex; justify-content: center; }
+.stage-center.with-screen .as-shot { width: auto; height: 100%; max-width: 100%; }

@@ -59,8 +59,15 @@ export class Brain {
   private ws: WebSocket | null = null;
   private pending: ((a: Analysis | null) => void) | null = null;
   private queue: Promise<unknown> = Promise.resolve();
+  private ready: Promise<void> | null = null;
 
-  async connect(): Promise<void> {
+  /** Lines heard before the session is up wait for it instead of being dropped. */
+  connect(): Promise<void> {
+    this.ready = this.open();
+    return this.ready;
+  }
+
+  private async open(): Promise<void> {
     const secret = await mintClientSecret();
     const ws = new WebSocket(REALTIME_URL, ['realtime', `bai-client-secret.${secret}`]);
     this.ws = ws;
@@ -105,6 +112,7 @@ export class Brain {
   /** Add a line to the brain's view of the call. For caller lines, resolves with its analysis. */
   hear(tag: 'CALLER' | 'MARGARET' | 'MARGARET-AI', text: string): Promise<Analysis | null> {
     const run = async () => {
+      if (this.ready) await this.ready.catch(() => {});
       this.send({
         type: 'conversation.item.create',
         item: { type: 'message', role: 'user', content: [{ type: 'input_text', text: `[${tag}]: ${text}` }] },

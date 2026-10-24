@@ -8,11 +8,15 @@ export function PhoneScreen({ state }: { state: CallState }) {
   const elapsed = state.startedAt ? (state.endedAt ?? now) - state.startedAt : 0;
   const doneTool = (name: string) => tools.find((t) => t.tool === name && t.status === 'done');
   const verify = doneTool('verify_institution');
+  const realVerify = doneTool('verify_caller_number'); // the real-browser check is RBC-specific
   const frozen = doneTool('freeze_transaction')?.result as { amount?: number } | undefined;
   const notified = doneTool('notify_family');
-  const claimed = (verify?.args.claimed_org as string | undefined) ?? null;
+  const claimed = (verify?.args.claimed_org as string | undefined) ?? (realVerify ? 'RBC' : null);
+  const notReally =
+    (verify && (verify.result as { match?: boolean })?.match === false) ||
+    (realVerify && (realVerify.result as { verdict?: string })?.verdict === 'mismatch');
   const checks = [
-    verify && (verify.result as { match?: boolean })?.match === false && `Not really ${claimed}`,
+    notReally && `Not really ${claimed}`,
     frozen && `$${(frozen.amount ?? 0).toLocaleString('en-US')} transfer paused`,
     notified &&
       !(notified.result as { error?: boolean })?.error &&

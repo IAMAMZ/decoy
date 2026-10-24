@@ -49,10 +49,22 @@ It already includes `feature/family-notify` and everything on `main` up to `d439
 
 ## ⚠️ Two decisions for the team
 
-**1. Yun's real browser is switched off on this branch.**
-`src/main.tsx` has `const REAL_BROWSER = false;`, which replaces `useBrowserBridge(...)` with a disconnected stub, so Decoy's screen plays the animated web checks.
-- **To turn it back on:** set `REAL_BROWSER = true`.
-- **Known clash if you do:** the bridge sends every `open_page` / `check_domain` / `web_search` tool call to `backend/browser_server.py`. That server only supports `open_page`; for the other two it returns an error, which **overwrites this branch's real RDAP result**. Fix by making the bridge only forward tools the server supports, or by teaching the server those tools.
+**1. Yun's real browser and this agent are now combined (resolved).**
+This branch includes `main` up to PR #2. When Yun's backend is running and the URL has `?browser`, the agent calls his real checks over HTTP (`POST /browser/tools/{name}`, passing the dashboard's tool_call id):
+
+| Moment | Real check (Yun) | Fallback without the backend |
+| --- | --- | --- |
+| Protecting starts | `verify_caller_number`, run in parallel with the freeze | `open_page` (RBC snapshot) + `verify_institution` |
+| A line flagged safe account / payment request / remote access / gift cards | `check_bank_policy` with the caller's exact line, once per call | skipped |
+| Caller gives a link | `check_link` | `check_domain` (RDAP from the browser) |
+
+- On the stage, **Decoy's screen sits on top**, with transcript and tool calls below, whenever the backend is connected.
+- `REAL_BROWSER = true` in `src/main.tsx`; the bridge still connects only with `?browser`.
+- The old clash is gone: the agent uses Yun's tool names when connected, so the bridge never forwards a tool his server doesn't support.
+- **To run the full thing:**
+  1. `python backend/server.py`
+  2. `npm run dev`
+  3. Open `localhost:5173/?mic&browser`
 
 **2. This branch has its own scam detector, and Young is building one.**
 Keep one. The integration point is small:
@@ -86,4 +98,11 @@ Keep one. The integration point is small:
    6. `If we get cut off, call me back on 647 555 0142 or go to rbc-secure-verify.com` → callback number and URL captured; `check_domain` says it isn't registered
 3. Press Esc: a summary card with minutes wasted, $3,000 protected and the intel count. Exactly one family alert arrives if `VITE_NTFY_TOPIC` is set.
 
-These steps passed on this branch on 2026-10-24, with about 0.5 s round trip for Margaret's replies.
+These steps passed on this branch on 2026-10-24, with about 0.5 s round trip for Margaret's replies. The escalation was identical in 3 of 3 runs. Lines typed before the brain has connected now wait for it; they used to be dropped, which made the whole call lag by a line or two.
+
+With `?mic&browser` and the backend running, the same script also produced:
+- `verify_caller_number` → "+1 (647) 555-0199 is not RBC's official number (1-800-769-2511)"
+- `check_bank_policy` → "RBC will never ask you to: Send an e-Transfer to your financial institution or yourself for any reason"
+- `check_link` → "rbc-secure-verify.com isn't registered"
+
+Each of these was shown live on Decoy's screen.

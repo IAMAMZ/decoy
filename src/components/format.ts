@@ -31,6 +31,9 @@ export const TOOL_LABEL: Record<string, string> = {
   log_intel: 'Log intel',
   generate_report: 'Generate report',
   analyze_turn: 'Higgs brain · assess the line',
+  verify_caller_number: 'Real browser · official number on rbc.com',
+  check_bank_policy: "Real browser · RBC's own fraud rules",
+  check_link: 'Real browser · registry + open the link',
   web_search: 'Search the web',
   open_page: 'Open web page',
   check_domain: 'Check domain registration',
@@ -71,6 +74,14 @@ export function describeResult(tool: string, args: Record<string, any>, r: any):
       return { text: `Stored as ${r.record_id}`, tone: 'ok' };
     case 'generate_report':
       return { text: `Report ${r.report_id} filed`, tone: 'ok' };
+    // Yun's real-browser checks: the backend writes the summary; the verdict sets the colour.
+    case 'verify_caller_number':
+    case 'check_bank_policy':
+    case 'check_link': {
+      if (r.error) return { text: r.summary ?? `${tool} couldn't finish`, tone: 'neutral' };
+      const fine = ['match', 'official', 'no_policy_found'].includes(r.verdict);
+      return { text: r.summary, tone: fine ? 'ok' : 'danger' };
+    }
     case 'analyze_turn': {
       if (r.error) return { text: r.summary, tone: 'neutral' };
       const flags = (r.flags ?? []).map((f: string) => f.replace(/_/g, ' ')).join(', ');

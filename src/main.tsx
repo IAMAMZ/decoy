@@ -20,15 +20,16 @@ import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-mono/500.css';
 import './styles.css';
 
-const REAL_BROWSER = false;
+const REAL_BROWSER = true;
 const BROWSER_OFF: Bridge = { connected: false, sessions: {}, current: null, send: () => {} };
 
 const TAKEOVER_LINE ="This looks like a scam. Don't worry, I'll handle it from here.";
 
 function App() {
   const { state, connected, replay, inject } = useCallEvents();
-  // Real Chrome (backend/browser_server.py) is switched off for the demo build: Decoy's screen
-  // plays the agent's web checks as an animation. Set REAL_BROWSER to true to use it again.
+  // Real Chrome (backend/server.py) connects only with ?browser. When it's up, the agent runs Yun's
+  // real checks on it and Decoy's screen shows them; without it, the agent's built-in checks run.
+  // Set REAL_BROWSER to false to never connect.
   const browser = REAL_BROWSER ? useBrowserBridge(state.tools, state.callId, inject) : BROWSER_OFF;
   useFamilyAlert(state, inject);
   useAgent(state, inject);
