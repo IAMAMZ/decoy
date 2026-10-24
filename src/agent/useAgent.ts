@@ -98,8 +98,15 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
       if (line.speaker === 'caller') {
         const backup = findIntel(line.text);
         const words = keywordFlags(line.text);
-        if (r.brain) r.brain.hear(tag, line.text).then((a) => onAnalysis(r, a, backup, words));
-        else onAnalysis(r, null, backup, words);
+        if (r.brain) {
+          // Shown on the dashboard as the brain's own tool call: the exact line in, its assessment out.
+          const brain = r.brain;
+          const out: { a: Analysis | null } = { a: null };
+          tool('analyze_turn', { speaker: 'caller', line: line.text }, async () => {
+            out.a = await brain.hear(tag, line.text);
+            return out.a ?? { summary: 'No assessment from Higgs for this line', error: true };
+          }).then(() => onAnalysis(r, out.a, backup, words));
+        } else onAnalysis(r, null, backup, words);
       } else {
         r.brain?.hear(tag, line.text);
       }
@@ -116,7 +123,8 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
 
   function onAnalysis(r: Run, a: Analysis | null, backup: Found[], words: string[]) {
     if (r.ended || r.callId !== run.current?.callId) return;
-    if (a?.claimed_org) r.claimedOrg = a.claimed_org;
+    // "RBC fraud prevention team" -> "RBC" when it's a bank we have an official record for.
+    if (a?.claimed_org) r.claimedOrg = officialFor(a.claimed_org)?.org ?? a.claimed_org;
     // The brain sometimes guesses concrete tactics nobody mentioned; only trust those when the words were said.
     const brainFlags = (a?.flags ?? []).filter((f) => !NEEDS_WORDS.includes(f) || words.includes(f));
     const turnFlags = [...new Set([...brainFlags, ...words])];

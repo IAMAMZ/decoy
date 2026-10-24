@@ -37,6 +37,12 @@ It already includes `feature/family-notify` and everything on `main` up to `d439
 - `player.ts` skips empty audio chunks; Higgs sometimes sends one.
 
 **UI:**
+- **Stage (`/?mic`) now shows what the agent is doing**, not the browser:
+  - a **live transcript** next to a **tool-call trace**, `fn(args) → result` with timing
+  - **click any call** for its raw JSON
+  - the brain's own `analyze_turn` call appears in orange, with the exact line it was given and its score, flags, evidence and intel
+  - **Decoy's screen is commented out** in `src/pages/Stage.tsx`; the line to restore it is in the comment at the top of that file
+- `analyze_turn` shows **Higgs's raw score**. The meter on the right is the smoothed score (at most +0.25 per line), so it can read lower than the raw value.
 - Decoy's screen shows "domain doesn't exist" results.
 - `verify_institution` handles an unknown bank.
 - The start card no longer covers the summary after a call ends.

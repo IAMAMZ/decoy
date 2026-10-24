@@ -1,27 +1,30 @@
-import { AgentScreen } from '../components/AgentScreen';
+// import { AgentScreen } from '../components/AgentScreen';
+// import { LiveScreen } from '../components/LiveScreen';
 import { Wordmark } from '../components/Brand';
-import { describeResult, fmtClock, INTEL_LABEL, TOOL_LABEL, useNow, useTween } from '../components/format';
+import { FLAG_LABEL, fmtClock, HARD_FLAGS, INTEL_LABEL, useNow, useTween } from '../components/format';
 import { PhoneScreen } from '../components/PhoneScreen';
 import { SummaryCard } from '../components/SummaryCard';
-import { LiveScreen } from '../components/LiveScreen';
 import { SpeakingTag } from '../components/TalkBar';
+import { ToolLog } from '../components/ToolLog';
+import { Transcript } from '../components/Transcript';
 import type { Bridge } from '../events/browserBridge';
-import { MIC } from '../events/useCallEvents';
 import type { CallState } from '../events/reducer';
+import { MIC } from '../events/useCallEvents';
 
-// The demo layout for judges: the phone, what the agent is doing, and three plain facts.
-// Everything else lives on /dashboard.
+// The demo layout: the phone, the live transcript, every tool call the agent makes, and the
+// facts that matter. Decoy's screen (the browser) is commented out for now; to bring it back,
+// swap the "live" grid below for:
+//   {browser.connected ? <LiveScreen bridge={browser} /> : <AgentScreen tools={state.tools} now={now} />}
 const MODE_TEXT = {
   monitoring: 'Listening',
   protecting: 'Protecting Margaret',
   takeover: 'Decoy has the call',
 };
 
-export function Stage({ state, browser }: { state: CallState; browser: Bridge }) {
-  const now = useNow(60);
+export function Stage({ state }: { state: CallState; browser: Bridge }) {
+  const now = useNow(250);
   const score = useTween(state.score);
   const elapsed = state.startedAt ? (state.endedAt ?? now) - state.startedAt : 0;
-  const actions = state.tools.filter((t) => t.status === 'done' && t.tool !== 'log_intel').slice(-5).reverse();
 
   return (
     <div className="stage">
@@ -34,7 +37,10 @@ export function Stage({ state, browser }: { state: CallState; browser: Bridge })
           <span className="elapsed">{fmtClock(elapsed)}</span>
         </header>
         <div className="stage-body">
-          {browser.connected ? <LiveScreen bridge={browser} /> : <AgentScreen tools={state.tools} now={now} />}
+          <div className="live-grid">
+            <Transcript state={state} />
+            <ToolLog tools={state.tools} startedAt={state.startedAt} title="Tool calls" />
+          </div>
           <aside className="rail">
             <div className="rail-block">
               <h2>Scam likelihood</h2>
@@ -42,34 +48,29 @@ export function Stage({ state, browser }: { state: CallState; browser: Bridge })
               <div className="rail-bar">
                 <div style={{ width: `${state.score * 100}%` }} className={state.score >= 0.8 ? 'hot' : ''} />
               </div>
-            </div>
-            <div className="rail-block grow">
-              <h2>What Decoy did</h2>
-              {actions.length === 0 && <p className="empty">Nothing yet.</p>}
-              <ul className="rail-actions">
-                {actions.map((t) => {
-                  const r = describeResult(t.tool, t.args, t.result);
-                  return (
-                    <li key={t.id} className="enter">
-                      <strong>{TOOL_LABEL[t.tool] ?? t.tool}</strong>
-                      <span className={`tone-${r.tone}`}>{r.text}</span>
-                    </li>
-                  );
-                })}
-              </ul>
+              <p className="rail-evidence">{state.evidence || 'Listening to the caller.'}</p>
             </div>
             <div className="rail-block">
+              <h2>Red flags</h2>
+              {state.flags.length === 0 && <p className="empty">None yet.</p>}
+              <ul className="rail-flags">
+                {state.flags.map((f) => (
+                  <li key={f} className={`enter ${HARD_FLAGS.has(f) ? 'hard' : ''}`}>
+                    {FLAG_LABEL[f] ?? f}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="rail-block grow">
               <h2>Caught from the scammer</h2>
               {state.intel.length === 0 && <p className="empty">Nothing yet.</p>}
               <ul className="rail-intel">
-                {state.intel
-                  .filter((i) => i.kind !== 'tactic')
-                  .map((i) => (
-                    <li key={i.value} className="enter">
-                      <span>{INTEL_LABEL[i.kind]}</span>
-                      <code>{i.value}</code>
-                    </li>
-                  ))}
+                {state.intel.map((i) => (
+                  <li key={i.kind + i.value} className="enter">
+                    <span>{INTEL_LABEL[i.kind]}</span>
+                    {i.kind === 'tactic' ? <em>{i.value}</em> : <code>{i.value}</code>}
+                  </li>
+                ))}
               </ul>
             </div>
           </aside>

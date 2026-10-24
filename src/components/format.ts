@@ -30,6 +30,7 @@ export const TOOL_LABEL: Record<string, string> = {
   take_over_call: 'Take over call',
   log_intel: 'Log intel',
   generate_report: 'Generate report',
+  analyze_turn: 'Higgs brain · assess the line',
   web_search: 'Search the web',
   open_page: 'Open web page',
   check_domain: 'Check domain registration',
@@ -70,6 +71,13 @@ export function describeResult(tool: string, args: Record<string, any>, r: any):
       return { text: `Stored as ${r.record_id}`, tone: 'ok' };
     case 'generate_report':
       return { text: `Report ${r.report_id} filed`, tone: 'ok' };
+    case 'analyze_turn': {
+      if (r.error) return { text: r.summary, tone: 'neutral' };
+      const flags = (r.flags ?? []).map((f: string) => f.replace(/_/g, ' ')).join(', ');
+      const found = (r.intel ?? []).map((i: { value: string }) => i.value).join(', ');
+      const parts = [`score ${Number(r.score).toFixed(2)}`, flags || 'no flags', r.evidence, found && `found ${found}`];
+      return { text: parts.filter(Boolean).join(' · '), tone: r.score >= 0.6 ? 'danger' : 'neutral' };
+    }
     case 'web_search':
     case 'open_page':
     case 'check_domain':
