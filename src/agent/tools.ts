@@ -15,7 +15,7 @@ export async function runTool(
   callId: string,
   tool: string,
   args: Record<string, unknown>,
-  impl: () => Promise<Result> | Result,
+  impl: (id: string) => Promise<Result> | Result,
 ): Promise<Result> {
   const id = `${tool}_${++seq}_${Date.now().toString(36)}`;
   const ev = (status: 'started' | 'done', result?: unknown) =>
@@ -24,7 +24,7 @@ export async function runTool(
   const started = performance.now();
   let result: Result;
   try {
-    result = await impl();
+    result = await impl(id);
   } catch (e) {
     result = { summary: `${tool} failed: ${e instanceof Error ? e.message : e}`, error: true };
   }
@@ -32,6 +32,26 @@ export async function runTool(
   if (wait > 0) await new Promise((r) => setTimeout(r, wait));
   emit(ev('done', result));
   return result;
+}
+
+// ---------- real checks on Yun's browser backend (backend/server.py) ----------
+
+/** The real-browser checks the agent uses when the backend is connected (?browser). */
+export const REAL_CHECKS = ['verify_caller_number', 'check_bank_policy', 'check_link'] as const;
+
+/**
+ * Runs one of Yun's checks in the real Chrome. Passing our tool_call id lets Decoy's screen show
+ * this run. ok:false (site down, timeout) comes back as an error result, not an exception.
+ */
+export async function realCheck(name: (typeof REAL_CHECKS)[number], args: Record<string, unknown>, id: string): Promise<Result> {
+  const r = await fetch(`/browser/tools/${name}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, args }),
+  });
+  if (!r.ok) throw new Error(`${name} ${r.status}: ${await r.text()}`);
+  const d = await r.json();
+  return d.ok ? d : { ...d, error: true };
 }
 
 // ---------- implementations ----------

@@ -1,13 +1,14 @@
 // Decoy as an agent, for live calls (?mic): listens through the Higgs brain, raises the score,
 // protects Margaret, takes over, captures the scammer's details and files a report.
 //
-//   monitoring --score >= 0.6--> protecting (look up caller, verify bank, freeze transfer;
+//   monitoring --score >= 0.6--> protecting (look up caller, verify the number, freeze transfer;
 //   the family alert fires on its own) --score >= 0.8, or a hard flag at >= 0.6--> takeover
 //
 // Manual overrides (Shift+T / Shift+S) go through the same mode changes, so they run the same steps.
 import { useEffect, useRef } from 'react';
 import type { CallState } from '../events/reducer';
 import type { CallEvent, IntelKind } from '../events/types';
+import { bridge } from '../events/browserBridge';
 import { MIC } from '../events/useCallEvents';
 import { Brain, type Analysis } from './brain';
 import { officialFor } from './data';
@@ -18,6 +19,7 @@ const PROTECT_AT = 0.6;
 const TAKEOVER_AT = 0.8;
 const HARD_FLAGS = ['safe_account', 'gift_cards', 'remote_access'];
 const NEEDS_WORDS = ['gift_cards', 'remote_access'];
+const POLICY_FLAGS = ['safe_account', 'payment_request', 'remote_access', 'gift_cards'];
 const MAX_RISE = 0.25; // per turn, so the meter climbs instead of jumping
 const MAX_FALL = 0.1;
 const TAKEOVER_LINE = "Margaret, this call is a scam. Your money is safe. You can hang up now; I'll handle it from here.";
@@ -38,6 +40,7 @@ type Run = {
   flags: Set<string>;
   claimedOrg: string;
   intel: Set<string>;
+  policyChecked: boolean;
   protect: Promise<void> | null;
   takeoverStarted: boolean;
   takeoverAt: number | null;
@@ -52,7 +55,7 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
 
   const emit = (type: CallEvent['type'], data: object) =>
     run.current && inject({ type, call_id: run.current.callId, ts: Date.now(), data } as CallEvent);
-  const tool = (name: string, args: Record<string, unknown>, impl: () => Promise<Record<string, unknown>> | Record<string, unknown>) =>
+  const tool = (name: string, args: Record<string, unknown>, impl: (id: string) => Promise<Record<string, unknown>> | Record<string, unknown>) =>
     tools.runTool(inject, run.current!.callId, name, args, impl);
 
   // ---- call lifecycle ----
@@ -66,6 +69,7 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
       flags: new Set(),
       claimedOrg: '',
       intel: new Set(),
+      policyChecked: false,
       protect: null,
       takeoverStarted: false,
       takeoverAt: null,
@@ -105,8 +109,8 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
           tool('analyze_turn', { speaker: 'caller', line: line.text }, async () => {
             out.a = await brain.hear(tag, line.text);
             return out.a ?? { summary: 'No assessment from Higgs for this line', error: true };
-          }).then(() => onAnalysis(r, out.a, backup, words));
-        } else onAnalysis(r, null, backup, words);
+          }).then(() => onAnalysis(r, out.a, backup, words, line.text));
+        } else onAnalysis(r, null, backup, words, line.text);
       } else {
         r.brain?.hear(tag, line.text);
       }
@@ -121,7 +125,7 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
     if (state.mode === 'takeover' && !r.takeoverStarted) takeover(r);
   }, [state.mode]);
 
-  function onAnalysis(r: Run, a: Analysis | null, backup: Found[], words: string[]) {
+  function onAnalysis(r: Run, a: Analysis | null, backup: Found[], words: string[], line: string) {
     if (r.ended || r.callId !== run.current?.callId) return;
     // "RBC fraud prevention team" -> "RBC" when it's a bank we have an official record for.
     if (a?.claimed_org) r.claimedOrg = officialFor(a.claimed_org)?.org ?? a.claimed_org;
@@ -150,6 +154,12 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
       emit('mode', { mode: 'protecting' });
     }
 
+    // The caller asked for something banks never ask for: find the bank's own rule saying so.
+    if (bridge.connected && !r.policyChecked && turnFlags.some((f) => POLICY_FLAGS.includes(f))) {
+      r.policyChecked = true;
+      tool('check_bank_policy', { claim: line }, (id) => tools.realCheck('check_bank_policy', { claim: line }, id));
+    }
+
     captureIntel(r, [...(a?.intel ?? []), ...backup]);
   }
 
@@ -157,6 +167,15 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
     const caller = live.current.callerNumber ?? '';
     await tool('lookup_caller', { number: caller }, () => tools.lookupCaller(caller));
     const org = r.claimedOrg;
+    if (bridge.connected) {
+      // Real check in Chrome (takes a few seconds): runs while the transfer is frozen.
+      const verifying = tool('verify_caller_number', { number: caller }, (id) =>
+        tools.realCheck('verify_caller_number', { number: caller }, id),
+      );
+      await freezePending(r);
+      await verifying;
+      return;
+    }
     if (officialFor(org)) {
       await tool('open_page', { url: officialFor(org)!.url }, () => tools.openOfficialPage(org));
     }
@@ -167,6 +186,10 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
       const q = `${org} "safe account" scam phone call`;
       await tool('web_search', { query: q }, () => tools.webSearch(q));
     }
+    await freezePending(r);
+  }
+
+  async function freezePending(r: Run) {
     const pending = (await tool('get_pending_transactions', { customer_id: 'margaret_c' }, tools.pendingTransfers)) as {
       transactions?: { id: string }[];
     };
@@ -198,7 +221,8 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
       tool('log_intel', { type: f.kind, value: f.value }, () => ({ stored: true, record_id: `intel_${String(r.intel.size).padStart(2, '0')}` }));
       if (f.kind === 'url') {
         const domain = f.value.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
-        tool('check_domain', { domain }, () => tools.checkDomain(domain));
+        if (bridge.connected) tool('check_link', { url: domain }, (id) => tools.realCheck('check_link', { url: domain }, id));
+        else tool('check_domain', { domain }, () => tools.checkDomain(domain));
       }
     }
   }
