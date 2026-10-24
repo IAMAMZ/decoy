@@ -124,9 +124,11 @@ let headStream: MediaStream | null = null;
 let toHeadset: GainNode | null = null; // scammer mic -> her ear, open while Space is held
 let toSpeakers: GainNode | null = null; // her mic -> the room, open during her turns
 let preroll: ArrayBuffer[] = [];
-/** Margaret on her own mic and speaker: ?headset, or a Margaret mic picked on the start card. */
+/** Margaret on her own mic: ?headset, or a Margaret mic picked on the start card that isn't the scammer's. */
 export function twoRooms(): boolean {
-  return HEADSET || !!state.settings.margaretMic;
+  const { margaretMic, scammerMic } = state.settings;
+  if (margaretMic && margaretMic === scammerMic) return false; // one shared mic: Space / Y push-to-talk
+  return HEADSET || !!margaretMic;
 }
 
 /** In two rooms, Margaret's turns come from voice detection unless Y was picked on the start card. */
