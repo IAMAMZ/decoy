@@ -151,7 +151,7 @@ body {
 /* ---------- transcript ---------- */
 .line {
   display: grid;
-  grid-template-columns: 40px 70px minmax(0, 1fr);
+  grid-template-columns: 40px 96px minmax(0, 1fr);
   gap: 10px;
   padding: 9px 0;
   border-bottom: 1px solid var(--line-soft);
@@ -574,3 +574,35 @@ body {
 .whois-card dt { color: var(--faint); }
 .whois-card dd { margin: 0; font-family: var(--mono); color: var(--text-2); }
 .whois-card dd.bad { color: var(--accent); }
+
+/* ---------- mic mode: push-to-talk ---------- */
+.speaking-tag { font-size: 14px; font-weight: 500; padding: 4px 10px; border-radius: 4px; animation: rise 0.2s ease-out; }
+.speaking-tag.caller { background: var(--surface-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--text-2); }
+.speaking-tag.customer { background: var(--surface-2); color: var(--ok); box-shadow: inset 0 0 0 1px var(--ok); }
+.speaking-tag.ai { background: var(--accent-dim); color: var(--accent); }
+.talkbar { gap: 14px; }
+.ptt { display: inline-flex; align-items: center; gap: 7px; font-family: var(--sans); color: var(--muted); }
+.ptt.on { color: var(--text); }
+.ptt.locked { color: var(--faint); }
+.ptt.locked kbd { opacity: 0.5; }
+.ptt em { font-style: normal; color: var(--faint); }
+kbd {
+  font: 500 11px var(--mono);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  color: var(--text-2);
+  background: var(--surface);
+}
+.ptt.on kbd { background: var(--text); color: var(--bg); border-color: var(--text); }
+.level { width: 60px; height: 4px; background: var(--line); }
+.level span { display: block; height: 100%; background: var(--ok); transition: width 0.1s linear; }
+.decoy-talk { color: var(--accent); font-family: var(--sans); min-width: 110px; }
+.talk-error { color: var(--accent); font-family: var(--sans); white-space: normal; }
+.start-card { width: min(460px, 100%); padding: 28px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); animation: rise 0.3s ease-out; }
+.start-card h2 { margin: 0 0 16px; font-size: 20px; font-weight: 600; }
+.start-card ul { list-style: none; margin: 0 0 22px; padding: 0; display: grid; gap: 10px; color: var(--text-2); }
+.start-card kbd { margin-right: 8px; }
+.start-card .talk-error { margin: 0 0 16px; }
+.btn:disabled { opacity: 0.5; cursor: default; }

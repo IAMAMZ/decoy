@@ -1,139 +1,71 @@
-# Decoy — handoff to Yun and Young
+# Decoy — handoff
 
-From Miran · Oct 23, 2026. The frontend and a real browser service are in the repo and runnable. Everything else on screen is still a replay of `frontend/src/data/fake_events.json`. Below: what exists, how to run it, and what each of you plugs in.
-
-## What's real and what's mocked
-
-| Piece | State |
-| --- | --- |
-| Stage view `/` (phone + Decoy's screen + side rail), `/dashboard`, `/call`, `/caller` | Built |
-| Decoy's screen (agent browser) | **Real**: Chrome browses the live web, streamed into the app |
-| Call events (transcript, score, mode, tool calls, intel, summary) | Replayed from `fake_events.json` |
-| `/ws/events`, detector, brain, tools, persona | **Yun**, not started |
-| Mic → Higgs → Margaret's voice, `/ws/audio`, `startCall()` / `endCall()` | **Young**, not started (`frontend/src/audio/index.ts` is a stub) |
+Updated by Miran · Oct 24, 2026. Decoy now runs **entirely in the browser on one laptop**, with no backend. The live voice call works: push-to-talk in, Higgs Realtime out. Detection and the agent brain aren't built yet, so takeover is forced with ⇧T for now.
 
 ## Run it
 
-Setup once (needs Node 18+, uv, Google Chrome installed):
-
 ```bash
-cp .env.example backend/.env            # add BOSON_AI_API_KEY and TAVILY_API_KEY
-cd backend && uv sync
-cd ../frontend && npm install
+cp .env.example .env.local     # put your Boson key in VITE_BOSON_API_KEY
+npm install
+npm run dev                    # http://localhost:5173
 ```
 
-Then in two terminals:
+| URL | What it does |
+| --- | --- |
+| `localhost:5173/?mic` | **Live call** with your mic. Press Enter or click Start. |
+| `localhost:5173/` | Scripted replay of `src/data/fake_events.json`, for UI work and as the backup demo |
+| `/dashboard?mic`, `/call?mic` | The same live call on the detail console and the phone screen |
 
-```bash
-cd backend && uv run python -m browser.server   # real browser, port 8001
-cd frontend && npm run dev                      # app, http://localhost:5173
-```
+Keys in `?mic` mode:
 
-Useful URLs and keys:
+| Key | Does |
+| --- | --- |
+| Hold **Space** | Talk as the **scammer** |
+| Hold **Y** | Talk as **Margaret** (the real customer). Locked after takeover. |
+| **⇧T** | Force takeover: Decoy becomes Margaret and starts answering the scammer |
+| **⇧S** | Force the scam score to 0.9 |
+| **Enter** / **Esc** | Start / end the call |
 
-- `localhost:5173/?live`: read real events from `/ws/events` on port 8000 instead of the replay.
-- `?at=29000`: jump the replay to 29 s (the takeover).
-- **Space** pause, **R** restart, **⇧T** force takeover, **⇧S** force score 0.9, **H** hide the bar.
-- The bottom bar shows `browser: real` when port 8001 is up. If it's down, a scripted animation plays instead.
+Use Chrome, click the page once so it has keyboard focus, and allow the mic.
 
-Gotchas we already hit:
+## How the voice loop works (`src/audio/`)
 
-- **Use `127.0.0.1`, not `localhost`, for the backend.** Node resolves `localhost` to IPv6, so the Vite proxy couldn't reach a server bound to 127.0.0.1.
-- **On Python 3.14, Playwright needs `greenlet>=3.2.4`.** It's pinned in `backend/pyproject.toml`; older versions fail to build.
-- **`.env` and `*.wav` are gitignored.** Never commit keys or voice clips.
+| File | Job |
+| --- | --- |
+| `pcm-worklet.js` | AudioWorklet: mic to 24 kHz PCM16, 100 ms chunks plus loudness |
+| `realtime.ts` | Higgs Realtime client: mints a client secret, connects with the `bai-client-secret.` subprotocol, manual turns, `higgs-stt-3.1` transcription |
+| `player.ts` | Plays Decoy's streamed audio; stops instantly on barge-in |
+| `index.ts` | Push-to-talk, turns, persona switch; emits dashboard events |
 
----
+- **Before takeover:** Decoy only listens. Each turn gets a text marker (`[Next audio: the CALLER]` / `[MARGARET]`) so the model knows who spoke. Both sides are transcribed onto the dashboard.
+- **On takeover:** the session instructions switch to the Margaret stalling persona from the brief. After that, each scammer turn gets a spoken reply.
+- **Interrupting:** pressing Space while Decoy is talking cuts it off.
+- **Speed:** measured round trip is about 0.45–0.55 s from releasing Space to Decoy's first audio. It's shown as "Round trip" on `/dashboard`.
 
-## Yun: backend, agent brain, tools
+Events the voice loop sends into the app's reducer (same format as the brief's contract):
 
-### 1. `/ws/events` on port 8000
+- `call_started` (with `caller_number`), `mode`, `call_ended`
+- `transcript` with `speaker`: `caller`, `customer` (new, the real Margaret) or `ai`
+- `latency` with `ms`
 
-The frontend already reads it in `?live` mode, and Vite proxies `/ws` and `/debug` to `127.0.0.1:8000`. Send the event format from the brief's Shared contract. Copy `fake_events.json` for exact shapes. Three optional fields were added; the UI works without them:
+## Yun: detection and brain, now in the browser
 
-| Event | Optional field | Used for |
-| --- | --- | --- |
-| `call_started` | `caller_number` | Number shown on Margaret's phone |
-| `transcript` | `emotion` | Shown as a stage direction, e.g. *(hesitant)* |
-| `avatar` | `video_url` | Plays the Higgs Avatar clip instead of the placeholder |
+Everything goes through one function: `inject(event)` from `useCallEvents()` in `src/main.tsx`. Any event you inject updates the stage and dashboard immediately. Copy shapes from `fake_events.json`.
 
-Also wire the debug routes the hidden keys call: `POST /debug/takeover` and `POST /debug/score?value=0.9`.
+- **Detector:** on each `caller` transcript, or on the raw turn audio, call Higgs and inject `score` with `score`, `flags` and `evidence`.
+- **Mode logic:** at 0.6 inject `mode: protecting` and run the protect tools. At 0.8 or a hard flag, inject `mode: takeover` plus `avatar`. The voice loop sees the takeover by itself (`setMode` in `index.ts`) and switches persona, so you don't need to touch audio.
+- **Tools:** inject `tool_call` with `started`, then `done` with a `result`, for each one. Mock data can be a JSON file in `src/`.
+- **Intel during takeover:** Higgs Realtime supports function tools (docs: "Tool use" guide). You could give the persona session a `log_intel` tool so Margaret's own model reports mule accounts. Add it in `realtime.ts` → `session.update` → `tools`.
+- **Boson's API allows browser calls (CORS)** for chat, voices and Realtime client secrets. Tavily (search) and rdap.org (domain lookups) do too.
 
-### 2. Three new web tools
+## Young: routing and app structure
 
-The browsing already works and is real. Call it from `tools.py`:
+- Pages are picked by path in `src/main.tsx` → `Page`, and `?mic` / `?live` are read in `src/events/useCallEvents.ts`. If you add a router, keep the `?mic` flag or move it, and keep the keyboard handler in `App`, because push-to-talk relies on the page owning Space and Y.
+- **No Web Worker needed.** Network and UI work is light. The one place that needs its own thread, mic processing, already has the AudioWorklet.
 
-```python
-from browser.client import browse
+## Gotchas
 
-# Use the same id as your tool_call event so Decoy's screen shows this run.
-result = await browse(call_id, "open_page", {"url": "www.rbcroyalbank.com/customer-service/index.html"})
-result["summary"]   # "Official number on www.rbcroyalbank.com: 1-800-769-2511"
-```
-
-| Tool | Args | What it really does | Result keys |
-| --- | --- | --- | --- |
-| `open_page` | `url`, optional `find` | Loads the page; if the number is hidden, clicks "Call us" / "Contact" like a person; highlights `find` or the first 1-8xx number | `summary`, `title`, `url`, `excerpt`, `highlight` |
-| `check_domain` | `domain` | RDAP registry lookup, then tries to open the site | `summary`, `registered`, `registered_on`, `age_days`, `registrar`, `reachable` |
-| `web_search` | `query` | Tavily search API, then opens the top result | `summary`, `results[{title,url,snippet}]` |
-
-- **Emit events around each call:** `tool_call` with `status: started` before `browse()`, then `done` with its result. The dashboard renders `summary` in "What Decoy did".
-- **Errors:** `browse()` raises `RuntimeError` on failure, e.g. no `TAVILY_API_KEY`. Catch it and emit `done` with `{"summary": "...", "error": true}`.
-- **Real outcomes differ from the mock script.** For example, `rbc-secure-verify.com` comes back "isn't registered", because it really doesn't exist. Feed the real `summary` to the LLM.
-- **Search engines block automated browsers.** Don't scrape Google, Bing or DuckDuckGo; search goes through Tavily (free key at tavily.com).
-- **Allow time:** runs take roughly 6–15 s and execute one at a time.
-
-### 3. Suggested order
-
-1. A stub `main.py` that streams `fake_events.json` over `/ws/events`, so `?live` works today.
-2. The text CLI brain with tools, emitting real events.
-3. Detector scores, then the takeover state machine.
-
----
-
-## Young: voice loop
-
-### 1. Replace the audio stub
-
-`frontend/src/audio/index.ts` currently exports two no-op functions. Keep the same signatures:
-
-```ts
-export async function startCall(): Promise<void>
-export async function endCall(): Promise<void>
-```
-
-The `/caller` page already calls them from its Start and End buttons. Serve `/ws/audio` from the port 8000 backend; Vite's existing `/ws` proxy rule already forwards it, so no config change is needed.
-
-### 2. Events your side emits
-
-These go to `/ws/events` via Yun's `emit()`:
-
-- `call_started` (with `caller_number` if you have it) and `call_ended`
-- `transcript` with `speaker: "caller" | "ai"`, `text`, and `emotion` from the brain's reply
-- `latency` with `ms`: shown as "Round trip" on `/dashboard`
-
-### 3. Higgs RealTime reference
-
-Miran's `my_voice_realtime.py` works against Boson. It was removed from `main` in the backend restructure; get it back with `git show c3f855f:my_voice_realtime.py`. It shows:
-
-- Cloning a voice: `POST /v1/audio/voices`; the API returns the ID under either `voice` or `voice_id`.
-- Opening `wss://api.boson.ai/v1/realtime` with `session.update`. The first update is acknowledged with `session.created`, not `.updated`.
-- Retrying when the voice check returns 429 (rate limit or no credit).
-- Streaming 24 kHz PCM16 output audio.
-
-Run it with `uv run python my_voice_realtime.py --style "warm, slightly confused"` to hear the persona voice.
-
-### 4. Avatar
-
-When the avatar clip exists, have the `avatar` event carry `video_url` and `/call` will play it. Until then a placeholder shows the text with a waveform.
-
----
-
-## Where things live
-
-```
-backend/browser/      real browser service (agent.py, server.py, client.py)
-frontend/src/pages/   Stage, Dashboard, Call, Caller
-frontend/src/components/   LiveScreen (real browser view), AgentScreen (scripted fallback), PhoneScreen, ...
-frontend/src/events/  event types, reducer, replay, browserBridge
-frontend/src/data/fake_events.json   the scripted demo call
-```
+- **The Boson key is visible in the page.** Fine on the demo laptop, but never deploy or share a `npm run build` made with `.env.local`, because the key is baked into it. `.env.local` is gitignored.
+- **Testing without a real mic:** Chrome's fake-mic flag played silence in headless tests, and the speech-to-text then invents text ("I'm not a good person"). If a transcript looks like nonsense, check that the mic is actually picking up sound.
+- **Real Chrome browsing was removed with the backend.** The agent screen plays a scripted animation. The Playwright service that drove real Chrome (RBC's live site, RDAP) is in git history at commit `dc958d9`. Run it again and add `?browser` to the URL if we want it back.
+- **SMS is on hold.** If we do it, ntfy (free push notification, works from the browser) is the simplest option.

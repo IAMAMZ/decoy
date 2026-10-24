@@ -5,8 +5,11 @@ import { bridge } from './browserBridge';
 import { initialState, reduce, type Action } from './reducer';
 import type { CallEvent } from './types';
 
-// ?live → read Yun's /ws/events; otherwise replay fake_events.json (ts there is ms from the start).
-export const LIVE = new URLSearchParams(window.location.search).has('live');
+// ?live → read Yun's /ws/events; ?mic → a real call on this laptop (push-to-talk, events come
+// from src/audio); otherwise replay fake_events.json (ts there is ms from the start).
+const params = new URLSearchParams(window.location.search);
+export const LIVE = params.has('live');
+export const MIC = params.has('mic');
 
 const SCRIPT = (script as unknown as CallEvent[]).slice().sort((a, b) => a.ts - b.ts);
 const TOTAL = SCRIPT[SCRIPT.length - 1].ts;
@@ -23,7 +26,7 @@ export type Replay = {
 export function useCallEvents() {
   const [state, dispatch] = useReducer(reduce, initialState);
   const [connected, setConnected] = useState(false);
-  const replay = useReplay(dispatch, !LIVE);
+  const replay = useReplay(dispatch, !LIVE && !MIC);
 
   useEffect(() => {
     if (!LIVE) return;

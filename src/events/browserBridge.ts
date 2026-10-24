@@ -32,6 +32,10 @@ export type Session = {
 // Read by the replay so it doesn't dispatch mock results for tools the real browser runs.
 export const bridge = { connected: false };
 
+// The Python browser service was removed when we went browser-only (see git history,
+// commit dc958d9, to bring it back). Only try to reach it when asked with ?browser.
+const ENABLED = new URLSearchParams(window.location.search).has('browser');
+
 export type Bridge = { connected: boolean; sessions: Record<string, Session>; current: string | null };
 
 export function useBrowserBridge(tools: ToolCall[], callId: string | null, inject: (ev: CallEvent) => void): Bridge {
@@ -46,6 +50,7 @@ export function useBrowserBridge(tools: ToolCall[], callId: string | null, injec
   const [current, setCurrent] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!ENABLED) return;
     let closed = false;
     let retry = 0;
     const connect = () => {

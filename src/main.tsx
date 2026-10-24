@@ -1,10 +1,12 @@
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { configureCall, endCall, setMode, startCall } from './audio';
 import { ReplayControls } from './components/ReplayControls';
+import { StartCall, TalkBar } from './components/TalkBar';
 import { useBrowserBridge, type Bridge } from './events/browserBridge';
 import type { CallState } from './events/reducer';
 import type { CallEvent } from './events/types';
-import { LIVE, useCallEvents } from './events/useCallEvents';
+import { LIVE, MIC, useCallEvents } from './events/useCallEvents';
 import { Call } from './pages/Call';
 import { Caller } from './pages/Caller';
 import { Dashboard } from './pages/Dashboard';
@@ -24,7 +26,13 @@ function App() {
   const [showControls, setShowControls] = useState(true);
   const path = window.location.pathname;
 
-  // Hidden demo keys (brief, Part 5). Live: hit Yun's debug routes. Replay: fake the events locally.
+  // Mic mode: the voice loop reports into the same reducer, and follows its mode.
+  useEffect(() => configureCall(inject), [inject]);
+  useEffect(() => {
+    if (MIC) setMode(state.mode);
+  }, [state.mode]);
+
+  // Hidden demo keys (brief, Part 5). Live: hit Yun's debug routes. Replay/mic: fake the events locally.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -39,6 +47,10 @@ function App() {
       } else if (e.shiftKey && e.key === 'S') {
         if (LIVE) fetch('/debug/score?value=0.9', { method: 'POST' });
         else inject(ev('score', { score: 0.9, flags: [], evidence: 'Manual override.' }));
+      } else if (MIC) {
+        // Space and Y are push-to-talk (handled in src/audio); Enter starts, Escape ends.
+        if (e.key === 'Enter') startCall();
+        else if (e.key === 'Escape') endCall();
       } else if (LIVE || e.shiftKey || e.metaKey || e.ctrlKey) {
         return;
       } else if (e.key === ' ') {
@@ -54,8 +66,14 @@ function App() {
   return (
     <>
       <Page path={path} state={state} browser={browser} />
-      {showControls && path !== '/caller' && (
-        <ReplayControls live={LIVE} connected={connected} replay={replay} realBrowser={browser.connected} />
+      {MIC && path !== '/caller' && <StartCall />}
+      {MIC ? (
+        <TalkBar />
+      ) : (
+        showControls &&
+        path !== '/caller' && (
+          <ReplayControls live={LIVE} connected={connected} replay={replay} realBrowser={browser.connected} />
+        )
       )}
     </>
   );

@@ -4,7 +4,9 @@ import { describeResult, fmtClock, INTEL_LABEL, TOOL_LABEL, useNow, useTween } f
 import { PhoneScreen } from '../components/PhoneScreen';
 import { SummaryCard } from '../components/SummaryCard';
 import { LiveScreen } from '../components/LiveScreen';
+import { SpeakingTag } from '../components/TalkBar';
 import type { Bridge } from '../events/browserBridge';
+import { MIC } from '../events/useCallEvents';
 import type { CallState } from '../events/reducer';
 
 // The demo layout for judges: the phone, what the agent is doing, and three plain facts.
@@ -28,6 +30,7 @@ export function Stage({ state, browser }: { state: CallState; browser: Bridge })
         <header className="stage-head">
           <Wordmark />
           <span className={`mode-tag ${state.mode}`}>{MODE_TEXT[state.mode]}</span>
+          {MIC && <SpeakingTag />}
           <span className="elapsed">{fmtClock(elapsed)}</span>
         </header>
         <div className="stage-body">

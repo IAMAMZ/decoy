@@ -2,6 +2,8 @@ import { useEffect, useRef } from 'react';
 import type { CallState } from '../events/reducer';
 import { fmtClock } from './format';
 
+const WHO = { caller: 'Caller', customer: 'Margaret', ai: 'Margaret (AI)' } as const;
+
 const MARKERS = [
   { mode: 'protecting', text: 'Protecting customer' },
   { mode: 'takeover', text: 'Takeover · AI persona on the line' },
@@ -21,7 +23,7 @@ export function Transcript({ state }: { state: CallState }) {
     node: (
       <div className={`line line-${l.speaker}`}>
         <span className="t">{fmtClock(l.ts - start)}</span>
-        <span className="who">{l.speaker === 'caller' ? 'Caller' : 'Margaret'}</span>
+        <span className="who">{WHO[l.speaker]}</span>
         <p>
           {l.text}
           {l.emotion && <em> ({l.emotion})</em>}
