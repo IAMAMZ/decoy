@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.pyrefly_cache/
+.coverage
+htmlcov/
+
+# Secrets
+.env
+.env.*
+
+# Editors
+.zed/
+.vscode/
+.DS_Store
+
+# Agents
+.claude/
+CLAUDE.local.md
+.codex/
+.agents/
