@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { BROWSE_TOOLS } from '../components/format';
 import type { ToolCall } from './reducer';
 import type { CallEvent } from './types';
@@ -36,7 +36,21 @@ export const bridge = { connected: false };
 // commit dc958d9, to bring it back). Only try to reach it when asked with ?browser.
 const ENABLED = new URLSearchParams(window.location.search).has('browser');
 
-export type Bridge = { connected: boolean; sessions: Record<string, Session>; current: string | null };
+// A person's input on Decoy's screen (backend/browser_server.py). x/y are page pixels (1280x800).
+export type BrowserInput =
+  | { action: 'click'; x: number; y: number; count: number }
+  | { action: 'move' | 'wheel'; x: number; y: number; dx?: number; dy?: number }
+  | { action: 'type'; text: string }
+  | { action: 'key'; key: string }
+  | { action: 'navigate'; url: string }
+  | { action: 'back' | 'forward' | 'reload' };
+
+export type Bridge = {
+  connected: boolean;
+  sessions: Record<string, Session>;
+  current: string | null;
+  send: (input: BrowserInput) => void;
+};
 
 export function useBrowserBridge(tools: ToolCall[], callId: string | null, inject: (ev: CallEvent) => void): Bridge {
   const ws = useRef<WebSocket | null>(null);
@@ -108,7 +122,11 @@ export function useBrowserBridge(tools: ToolCall[], callId: string | null, injec
     }
   }, [tools, connected]);
 
-  return { connected, sessions, current };
+  const send = useCallback((input: BrowserInput) => {
+    if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(JSON.stringify({ type: 'input', ...input }));
+  }, []);
+
+  return { connected, sessions, current, send };
 }
 
 function blank(id: string, tools: ToolCall[]): Session {
