@@ -2,7 +2,7 @@
 // protects the customer, takes over, captures the scammer's details and files a report.
 //
 //   monitoring --score >= 0.6--> protecting (look up caller, verify the number, freeze transfer;
-//   the family alert fires on its own) --score >= 0.8, or a hard flag at >= 0.6, once the voice is cloned--> takeover
+//   the family alert fires on its own) --score >= 0.8, or a hard flag at >= 0.6, once the voice is cloned, and the customer says yes on the phone--> takeover
 //
 // With the real browser (?browser), the number is verified as soon as the caller names a bank we can
 // check (RBC), not at protecting: the screen shows it early and protect() reuses the result.
@@ -162,11 +162,12 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
     if (mode !== 'takeover' && (r.score >= TAKEOVER_AT || (hard && r.score >= PROTECT_AT))) {
       if (mode === 'monitoring') emit('mode', { mode: 'protecting' });
       // Let the protect steps play out on screen first, and wait for the customer's voice clone,
-      // then hand the call to Decoy. Until then the real customer stays on and keeps feeding the clone.
+      // then ask the customer on the phone whether Decoy should take over. Until then the real customer stays on and keeps feeding the clone.
       const shown = new Promise((ok) => setTimeout(ok, mode === 'monitoring' ? 6000 : 0));
       const cloned = Promise.race([voiceReady(), new Promise((ok) => setTimeout(ok, CLONE_WAIT_MS))]);
       Promise.all([shown, cloned]).then(() => {
-        if (!r.ended && r.callId === run.current?.callId && live.current.mode !== 'takeover') emit('mode', { mode: 'takeover' });
+        if (!r.ended && r.callId === run.current?.callId && live.current.mode !== 'takeover' && !live.current.takeoverOffer)
+          emit('takeover_offer', { status: 'asking' });
       });
     } else if (mode === 'monitoring' && r.score >= PROTECT_AT) {
       emit('mode', { mode: 'protecting' });

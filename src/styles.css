@@ -353,9 +353,18 @@ body {
 .avatar-text { margin: 0; font-size: 15px; }
 .avatar .credit { margin: auto 0 0; }
 .phone-controls { display: flex; justify-content: center; gap: 22px; margin-top: auto; }
-.pc { width: 54px; height: 54px; border-radius: 50%; background: var(--surface-2); }
-.pc-end { background: var(--accent); }
-.pc-end.off { opacity: 0.3; }
+.pc { width: 54px; height: 54px; border: 0; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); color: var(--text); cursor: pointer; }
+.pc:active { filter: brightness(1.3); }
+.pc svg { width: 24px; height: 24px; fill: currentColor; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.pc-end { background: #e5484d; color: #fff; }
+.pc-end:disabled { opacity: 0.3; cursor: default; }
+.offer { padding: 14px; border-radius: 12px; border: 1px solid var(--accent); background: var(--accent-dim); }
+.offer .alert-title { color: var(--accent); }
+.offer p { margin: 6px 0 12px; font-size: 14px; color: var(--text-2); }
+.offer-actions { display: flex; gap: 8px; }
+.offer-actions button { flex: 1; padding: 10px; border: 0; border-radius: 10px; font: inherit; font-weight: 600; cursor: pointer; }
+.offer-no { background: var(--surface-2); color: var(--text); }
+.offer-yes { background: var(--accent); color: #fff; }
 
 /* ---------- caller page ---------- */
 .caller { text-align: center; align-content: center; gap: 10px; }

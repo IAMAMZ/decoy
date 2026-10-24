@@ -1,8 +1,11 @@
+import { endCall } from '../audio';
 import type { CallState } from '../events/reducer';
+import type { CallEvent } from '../events/types';
+import { MIC } from '../events/useCallEvents';
 import { BRAND, Logo } from './Brand';
 import { fmtClock, useNow } from './format';
 
-export function PhoneScreen({ state }: { state: CallState }) {
+export function PhoneScreen({ state, inject }: { state: CallState; inject: (ev: CallEvent) => void }) {
   const now = useNow(500);
   const { status, mode, tools, avatar } = state;
   const elapsed = state.startedAt ? (state.endedAt ?? now) - state.startedAt : 0;
@@ -22,6 +25,11 @@ export function PhoneScreen({ state }: { state: CallState }) {
       !(notified.result as { error?: boolean })?.error &&
       `${String(notified.args.contact ?? 'Family').split(' ')[0]} has been notified`,
   ].filter(Boolean) as string[];
+  const ev = (type: CallEvent['type'], data: object) =>
+    ({ type, call_id: state.callId ?? 'demo', ts: Date.now(), data }) as CallEvent;
+  const asking = status === 'active' && mode !== 'takeover' && state.takeoverOffer === 'asking';
+  // Live: hang up the real call (the voice loop emits call_ended). Replay: just end it on screen.
+  const hangUp = () => (MIC ? endCall() : inject(ev('call_ended', {})));
 
   return (
     <div className="phone-wrap">
@@ -60,12 +68,36 @@ export function PhoneScreen({ state }: { state: CallState }) {
               </div>
             )}
 
+            {asking && (
+              <div className="offer enter" role="dialog" aria-label="Let Decoy take this call?">
+                <div className="alert-title">Let {BRAND} take this call?</div>
+                <p>{BRAND} will talk to the caller in your voice. You can hang up.</p>
+                <div className="offer-actions">
+                  <button className="offer-no" onClick={() => inject(ev('takeover_offer', { status: 'declined' }))}>
+                    Not now
+                  </button>
+                  <button className="offer-yes" onClick={() => inject(ev('mode', { mode: 'takeover' }))}>
+                    Take over
+                  </button>
+                </div>
+              </div>
+            )}
+
             {mode === 'takeover' && avatar && <AvatarPanel avatar={avatar} now={now} />}
 
             <div className="phone-controls">
-              <span className="pc" />
-              <span className="pc" />
-              <span className={`pc pc-end ${status === 'ended' ? 'off' : ''}`} />
+              {/* Speaker: looks the part, does nothing. */}
+              <button className="pc" aria-label="Speaker">
+                <svg viewBox="0 0 24 24" aria-hidden>
+                  <path d="M4 9v6h4l5 4V5L8 9H4z" />
+                  <path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" />
+                </svg>
+              </button>
+              <button className="pc pc-end" aria-label="End call" disabled={status === 'ended'} onClick={hangUp}>
+                <svg viewBox="0 0 24 24" aria-hidden>
+                  <path d="M3 14.5c5-5 13-5 18 0l-2.5 2.5-3.5-1.5v-2.5a10 10 0 0 0-6 0v2.5L5.5 17 3 14.5z" />
+                </svg>
+              </button>
             </div>
           </div>
         )}

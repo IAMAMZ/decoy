@@ -22,6 +22,8 @@ export type CallEvent =
   | Ev<'latency', { ms: number }>
   | Ev<'score', { score: number; flags: string[]; evidence: string }>
   | Ev<'mode', { mode: Mode }>
+  // extension: the phone asks the customer before Decoy takes over; 'declined' means don't ask again this call
+  | Ev<'takeover_offer', { status: 'asking' | 'declined' }>
   | Ev<'tool_call', {
       id: string;
       tool: string;
