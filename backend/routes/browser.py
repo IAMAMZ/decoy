@@ -13,7 +13,7 @@ router = APIRouter(prefix="/browser")
 async def browser_ws(ws: WebSocket) -> None:
     """Streams the screen to every client. Clients may send a person's input
     {"type": "input", "action": click|move|wheel|type|key|navigate|back|forward|reload, ...}
-    (x/y in page pixels, 1280x800) or {"id", "tool": "open_page", "args": {"url"}}."""
+    (x/y in page pixels, 1280x720) or {"id", "tool": "open_page", "args": {"url"}}."""
     await ws.accept()
     task = browser.add_client(ws)
     try:
