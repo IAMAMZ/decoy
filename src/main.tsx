@@ -11,6 +11,7 @@ import { Call } from './pages/Call';
 import { Caller } from './pages/Caller';
 import { Dashboard } from './pages/Dashboard';
 import { Stage } from './pages/Stage';
+import { useFamilyAlert } from './tools/notifyFamily';
 import '@fontsource/ibm-plex-sans/400.css';
 import '@fontsource/ibm-plex-sans/500.css';
 import '@fontsource/ibm-plex-sans/600.css';
@@ -23,6 +24,7 @@ const TAKEOVER_LINE = "This looks like a scam. Don't worry, I'll handle it from 
 function App() {
   const { state, connected, replay, inject } = useCallEvents();
   const browser = useBrowserBridge(state.tools, state.callId, inject);
+  useFamilyAlert(state, inject);
   const [showControls, setShowControls] = useState(true);
   const path = window.location.pathname;
 

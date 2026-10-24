@@ -14,7 +14,9 @@ export function PhoneScreen({ state }: { state: CallState }) {
   const checks = [
     verify && (verify.result as { match?: boolean })?.match === false && `Not really ${claimed}`,
     frozen && `$${(frozen.amount ?? 0).toLocaleString('en-US')} transfer paused`,
-    notified && `${String(notified.args.contact ?? 'Family').split(' ')[0]} has been texted`,
+    notified &&
+      !(notified.result as { error?: boolean })?.error &&
+      `${String(notified.args.contact ?? 'Family').split(' ')[0]} has been notified`,
   ].filter(Boolean) as string[];
 
   return (
