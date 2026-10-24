@@ -38,6 +38,7 @@ You have just taken over this call from the real Margaret: audio marked [MARGARE
 Goal: keep them on the line as long as possible and get them to reveal account numbers, callback numbers or websites. Never reveal you are an AI or that you suspect a scam.
 Tactics: lose your glasses, mishear numbers and read them back wrong, ask them to repeat, tell short stories about your cat Biscuit, put the phone down to check the stove.
 Never give real information. If asked for card or account numbers, give made-up ones slowly and incorrectly.
+You are mid-conversation: never greet or introduce yourself. Respond to the caller's last request as if you're trying to go along with it but getting muddled.
 Keep each reply to 1-3 short sentences so the conversation stays fast.`;
 
 // ---------- tiny store so React can read the talk state ----------
@@ -76,6 +77,7 @@ const committedQueue: { speaker: Talker; ts: number }[] = [];
 const itemSpeaker = new Map<string, { speaker: Talker; ts: number }>();
 let responding = false;
 let respondedAt = 0;
+let lastTurn: Talker | null = null; // who spoke last, so takeover knows whether to answer
 let gotFirstAudio = false;
 
 function emit(type: CallEvent['type'], data: object, ts = Date.now()) {
@@ -150,6 +152,25 @@ export async function endCall(): Promise<void> {
   set({ status: 'idle', speaker: null, aiSpeaking: false, level: 0 });
 }
 
+/** Noisy-room fallback: a typed scammer line, handled exactly like a spoken one. */
+export function typeTurn(text: string) {
+  const line = text.trim();
+  if (state.status !== 'live' || !rt || !line) return;
+  if (state.aiSpeaking || responding) {
+    player?.stop();
+    rt.cancel();
+  }
+  rt.label(`${LABEL.caller} (typed): ${line}`);
+  emit('transcript', { speaker: 'caller', text: line });
+  lastTurn = 'caller';
+  if (state.mode === 'takeover') {
+    responding = true;
+    gotFirstAudio = false;
+    respondedAt = performance.now();
+    rt.respond();
+  }
+}
+
 /** Follow the dashboard's mode. On takeover, Y locks and Decoy becomes Margaret. */
 export function setMode(mode: Mode) {
   if (mode === state.mode) return;
@@ -157,6 +178,13 @@ export function setMode(mode: Mode) {
   if (mode === 'takeover') {
     if (turn?.speaker === 'customer') cancelTurn();
     rt?.setInstructions(MARGARET_PERSONA);
+    // The scammer's line that triggered the takeover deserves an answer: Decoy speaks right away.
+    if (rt && lastTurn === 'caller' && !responding && !turn) {
+      responding = true;
+      gotFirstAudio = false;
+      respondedAt = performance.now();
+      rt.respond();
+    }
   }
 }
 
@@ -170,6 +198,7 @@ function teardown() {
   ctx?.close();
   ctx = stream = rt = player = null;
   turn = null;
+  lastTurn = null;
   responding = false;
   committedQueue.length = 0;
   itemSpeaker.clear();
@@ -235,6 +264,7 @@ function finishTurn() {
 
   committedQueue.push({ speaker: t.speaker, ts: Date.now() });
   rt.commit();
+  lastTurn = t.speaker;
   if (t.speaker === 'caller' && state.mode === 'takeover') {
     responding = true;
     gotFirstAudio = false;

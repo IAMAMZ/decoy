@@ -12,6 +12,7 @@ export class Player {
   play(b64: string) {
     const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
     const pcm = new Int16Array(bytes.buffer, 0, bytes.byteLength >> 1);
+    if (pcm.length === 0) return; // Higgs sometimes sends an empty chunk; there's nothing to play
     const buf = this.ctx.createBuffer(1, pcm.length, 24000);
     const ch = buf.getChannelData(0);
     for (let i = 0; i < pcm.length; i++) ch[i] = pcm[i] / 0x8000;

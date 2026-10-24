@@ -613,3 +613,13 @@ kbd {
 .start-card kbd { margin-right: 8px; }
 .start-card .talk-error { margin: 0 0 16px; }
 .btn:disabled { opacity: 0.5; cursor: default; }
+.type-turn input {
+  width: 240px;
+  font: 13px var(--sans);
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 9px;
+}
+.type-turn input:focus { outline: none; border-color: var(--faint); }

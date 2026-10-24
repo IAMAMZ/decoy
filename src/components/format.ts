@@ -50,6 +50,7 @@ export function describeResult(tool: string, args: Record<string, any>, r: any):
         ? { text: `Known scam number · ${r.reports} reports · reputation ${r.reputation}`, tone: 'danger' }
         : { text: `No reports · reputation ${r.reputation}`, tone: 'ok' };
     case 'verify_institution':
+      if (!r.official_number) return { text: `No official number on file for ${args.claimed_org}`, tone: 'neutral' };
       return r.match
         ? { text: `Matches ${args.claimed_org}'s official line`, tone: 'ok' }
         : { text: `Not ${args.claimed_org}: official line is ${r.official_number}`, tone: 'danger' };

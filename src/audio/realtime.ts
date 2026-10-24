@@ -16,6 +16,20 @@ export type RealtimeHandlers = {
 };
 
 const API = 'https://api.boson.ai/v1';
+export const REALTIME_URL = 'wss://api.boson.ai/v1/realtime';
+
+/** Short-lived key for one Realtime connection (pass as subprotocol `bai-client-secret.<key>`). */
+export async function mintClientSecret(): Promise<string> {
+  const key = import.meta.env.VITE_BOSON_API_KEY as string | undefined;
+  if (!key) throw new Error('Set VITE_BOSON_API_KEY in .env.local');
+  const r = await fetch(`${API}/realtime/client_secrets`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expires_after: { seconds: 600 } }),
+  });
+  if (!r.ok) throw new Error(`Boson client secret failed (${r.status}): ${await r.text()}`);
+  return (await r.json()).value;
+}
 
 export class Realtime {
   private ws: WebSocket | null = null;
@@ -25,18 +39,8 @@ export class Realtime {
   constructor(private h: RealtimeHandlers) {}
 
   async connect(instructions: string): Promise<void> {
-    const key = import.meta.env.VITE_BOSON_API_KEY as string | undefined;
-    if (!key) throw new Error('Set VITE_BOSON_API_KEY in frontend/.env.local');
-
-    const r = await fetch(`${API}/realtime/client_secrets`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ expires_after: { seconds: 600 } }),
-    });
-    if (!r.ok) throw new Error(`Boson client secret failed (${r.status}): ${await r.text()}`);
-    const { value } = await r.json();
-
-    const ws = new WebSocket('wss://api.boson.ai/v1/realtime', ['realtime', `bai-client-secret.${value}`]);
+    const secret = await mintClientSecret();
+    const ws = new WebSocket(REALTIME_URL, ['realtime', `bai-client-secret.${secret}`]);
     this.ws = ws;
     await new Promise<void>((resolve, reject) => {
       ws.onopen = () => resolve();

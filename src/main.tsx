@@ -12,6 +12,7 @@ import { Caller } from './pages/Caller';
 import { Dashboard } from './pages/Dashboard';
 import { Stage } from './pages/Stage';
 import { useFamilyAlert } from './tools/notifyFamily';
+import { useAgent } from './agent/useAgent';
 import '@fontsource/ibm-plex-sans/400.css';
 import '@fontsource/ibm-plex-sans/500.css';
 import '@fontsource/ibm-plex-sans/600.css';
@@ -19,12 +20,18 @@ import '@fontsource/ibm-plex-mono/400.css';
 import '@fontsource/ibm-plex-mono/500.css';
 import './styles.css';
 
-const TAKEOVER_LINE = "This looks like a scam. Don't worry, I'll handle it from here.";
+const REAL_BROWSER = false;
+const BROWSER_OFF: Bridge = { connected: false, sessions: {}, current: null, send: () => {} };
+
+const TAKEOVER_LINE ="This looks like a scam. Don't worry, I'll handle it from here.";
 
 function App() {
   const { state, connected, replay, inject } = useCallEvents();
-  const browser = useBrowserBridge(state.tools, state.callId, inject);
+  // Real Chrome (backend/browser_server.py) is switched off for the demo build: Decoy's screen
+  // plays the agent's web checks as an animation. Set REAL_BROWSER to true to use it again.
+  const browser = REAL_BROWSER ? useBrowserBridge(state.tools, state.callId, inject) : BROWSER_OFF;
   useFamilyAlert(state, inject);
+  useAgent(state, inject);
   const [showControls, setShowControls] = useState(true);
   const path = window.location.pathname;
 
@@ -68,7 +75,8 @@ function App() {
   return (
     <>
       <Page path={path} state={state} browser={browser} />
-      {MIC && path !== '/caller' && <StartCall />}
+      {/* Only before the first call: afterwards the summary card stays visible, and the bar restarts. */}
+      {MIC && path !== '/caller' && state.status === 'idle' && <StartCall />}
       {MIC ? (
         <TalkBar />
       ) : (
