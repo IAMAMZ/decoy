@@ -1,4 +1,4 @@
-import { endCall, startCall, typeTurn, useTalk, type Talker } from '../audio';
+import { CLONE_TARGET_SECONDS, endCall, startCall, typeTurn, useTalk, type Talker } from '../audio';
 
 const NAMES: Record<Talker, string> = { caller: 'Scammer', customer: 'Margaret' };
 
@@ -24,6 +24,7 @@ export function TalkBar() {
           <input name="line" placeholder="Or type as the scammer…" autoComplete="off" />
         </form>
       )}
+      {live && <CloneTag clone={t.clone} />}
       <span className={`decoy-talk ${t.aiSpeaking ? 'on' : ''}`}>{t.aiSpeaking ? 'Decoy speaking' : ''}</span>
       {t.error && <span className="talk-error">{t.error}</span>}
       <nav>
@@ -58,6 +59,17 @@ function Key({ k, who, t, locked }: { k: string; who: Talker; t: ReturnType<type
       )}
     </span>
   );
+}
+
+/** Shows the real customer's speech filling up the voice clone, so you can tell your voice is getting in. */
+function CloneTag({ clone }: { clone: ReturnType<typeof useTalk>['clone'] }) {
+  const text = {
+    collecting: `Voice clone ${clone.seconds.toFixed(1)}/${CLONE_TARGET_SECONDS}s`,
+    cloning: 'Cloning voice…',
+    ready: `Voice cloned · ${clone.seconds.toFixed(1)}s`,
+    failed: 'Voice clone failed',
+  }[clone.status];
+  return <span className={`clone-tag clone-${clone.status}`}>{text}</span>;
 }
 
 /** Big "who's talking" label for the stage header, so judges can follow a live call. */

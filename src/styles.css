@@ -606,6 +606,9 @@ kbd {
 .level { width: 60px; height: 4px; background: var(--line); }
 .level span { display: block; height: 100%; background: var(--ok); transition: width 0.1s linear; }
 .decoy-talk { color: var(--accent); font-family: var(--sans); min-width: 110px; }
+.clone-tag { color: var(--muted); font-family: var(--sans); }
+.clone-tag.clone-ready { color: var(--ok); }
+.clone-tag.clone-failed { color: var(--accent); }
 .talk-error { color: var(--accent); font-family: var(--sans); white-space: normal; }
 .start-card { width: min(460px, 100%); padding: 28px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); animation: rise 0.3s ease-out; }
 .start-card h2 { margin: 0 0 16px; font-size: 20px; font-weight: 600; }
