@@ -1,0 +1,13 @@
+# Uploaded to Cloud Build. Keys stay on the laptop: they reach Cloud Run as env vars, never in the image.
+.env
+.env.*
+!.env.production
+.git
+.agents
+.claude
+node_modules/
+dist/
+**/__pycache__/
+*.wav
+*.mp3
+*.flac

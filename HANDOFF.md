@@ -76,9 +76,18 @@ Everything goes through one function: `inject(event)` from `useCallEvents()` in 
 - Pages are picked by path in `src/main.tsx` → `Page`, and `?mic` / `?live` are read in `src/events/useCallEvents.ts`. If you add a router, keep the `?mic` flag or move it, and keep the keyboard handler in `App`, because push-to-talk relies on the page owning Space and Y.
 - **No Web Worker needed.** Network and UI work is light. The one place that needs its own thread, mic processing, already has the AudioWorklet.
 
+## Deploy (Cloud Run)
+
+```bash
+gcloud auth login
+./deploy.sh <gcp-project-id> [region]   # builds in Cloud Build, prints the https URL
+```
+
+One container serves the page, the real Chrome and the Boson proxy. It runs exactly one instance, because there is one Chrome. The Boson key goes up as an env var, and the ntfy topic is baked into the page. Sites like RBC may block GCP's IPs, so test the live checks on the deployed URL.
+
 ## Gotchas
 
-- **The Boson key is visible in the page.** Fine on the demo laptop, but never deploy or share a `npm run build` made with `.env.local`, because the key is baked into it. `.env.local` is gitignored.
+- **The Boson key stays off the page.** The page calls `/api/boson/*`, and a proxy adds the key: Vite in dev (from `.env.local` or `.env`), `backend/routes/boson.py` when deployed. Other `VITE_` values (ntfy topic, Tavily) are still baked into the build.
 - **Testing without a real mic:** Chrome's fake-mic flag played silence in headless tests, and the speech-to-text then invents text ("I'm not a good person"). If a transcript looks like nonsense, check that the mic is actually picking up sound.
 - **Real Chrome browsing was removed with the backend.** The agent screen plays a scripted animation. The Playwright service that drove real Chrome (RBC's live site, RDAP) is in git history at commit `dc958d9`. Run it again and add `?browser` to the URL if we want it back.
 - **Family alert = ntfy push, not SMS** (`src/tools/notifyFamily.ts`). It fires `notify_family` once per call when the mode first leaves monitoring. To see it buzz:
