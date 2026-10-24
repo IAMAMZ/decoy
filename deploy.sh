@@ -17,5 +17,5 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregi
 # shortcut: the key is a plain env var (visible to project viewers), move it to Secret Manager if the project is shared.
 gcloud run deploy decoy --source . --project "$PROJECT" --region "$REGION" \
   --allow-unauthenticated --min-instances 1 --max-instances 1 --session-affinity \
-  --cpu 2 --memory 2Gi --timeout 3600 --no-cpu-throttling \
+  --cpu 2 --memory 2Gi --timeout 3600 --no-cpu-throttling --execution-environment gen2 \
   --set-env-vars "BOSON_API_KEY=$KEY"
