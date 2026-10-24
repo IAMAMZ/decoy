@@ -27,7 +27,7 @@ export async function sendFamilyAlert(message: string): Promise<Record<string, u
 
 function alertText(state: CallState): string {
   const from = state.callerNumber ? ` from ${state.callerNumber}` : '';
-  return `Your mum is on a likely scam call${from}. Decoy is protecting her account and keeping the caller busy. Please give her a call when you can.`;
+  return `Young is getting a scam call${from}. Decoy is protecting the account and keeping the caller busy. Please give Young a call when you can.`;
 }
 
 /**
