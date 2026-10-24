@@ -20,7 +20,7 @@ import { Vad } from './vad';
 export type Talker = 'caller' | 'customer';
 
 export type Role = 'scammerMic' | 'scammerOut' | 'margaretMic' | 'margaretOut';
-export type AudioSettings = Partial<Record<Role, string>> & { vad?: number };
+export type AudioSettings = Partial<Record<Role, string>> & { vad?: number; herTurns?: 'vad' | 'key' };
 
 export type TalkState = {
   settings: AudioSettings; // chosen device ids, and Margaret's start level
@@ -129,6 +129,11 @@ export function twoRooms(): boolean {
   return HEADSET || !!state.settings.margaretMic;
 }
 
+/** In two rooms, Margaret's turns come from voice detection unless Y was picked on the start card. */
+export function herTurnsByVad(): boolean {
+  return twoRooms() && state.settings.herTurns !== 'key';
+}
+
 const vad = new Vad(state.settings.vad ?? VAD_DEFAULT);
 
 /** Pick a device for one side, or Margaret's start level. Applies to the next call; the level applies now. */
@@ -159,7 +164,9 @@ export async function startCall(): Promise<void> {
     // AudioContext sinkId is Chrome 110+ and not in TS's DOM types yet.
     ctx = new AudioContext({ sampleRate: 24000, ...(dev.scammerOut && { sinkId: dev.scammerOut }) } as AudioContextOptions);
     stream = await navigator.mediaDevices.getUserMedia({
-      audio: dev.scammerMic ? { ...MIC_OPTS, deviceId: { exact: dev.scammerMic } } : MIC_OPTS,
+      // Two rooms need no echo cancelling: each side's speaker is muted while that side talks. Chrome's
+      // macOS voice processing also turns the MacBook mic down and drags in the Bluetooth device.
+      audio: { ...MIC_OPTS, echoCancellation: !twoRooms(), ...(dev.scammerMic && { deviceId: { exact: dev.scammerMic } }) },
     });
     await ctx.audioWorklet.addModule(workletUrl);
     if (twoRooms()) await connectHeadset(dev as Devices);
@@ -253,6 +260,9 @@ export function setMode(mode: Mode) {
   set({ mode });
   if (mode === 'takeover') {
     if (turn?.speaker === 'customer') cancelTurn();
+    // The real Margaret is off the call: release her mic, which also lets a Bluetooth headset leave call mode.
+    headStream?.getTracks().forEach((t) => t.stop());
+    set({ herLevel: 0 });
     rt?.setInstructions(MARGARET_PERSONA);
     if (clonedVoice) rt?.setVoice(clonedVoice);
     else maybeClone(CLONE_MIN_SECONDS); // not enough yet for a good clone: use what there is
@@ -324,14 +334,14 @@ async function maybeClone(minSeconds: number) {
 function keyToTalker(e: KeyboardEvent): Talker | null {
   if (e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return null;
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return null;
-  return e.code === 'Space' ? 'caller' : e.code === 'KeyY' && !twoRooms() ? 'customer' : null;
+  return e.code === 'Space' ? 'caller' : e.code === 'KeyY' && !herTurnsByVad() ? 'customer' : null;
 }
 
 function onKeyDown(e: KeyboardEvent) {
   const who = keyToTalker(e);
   if (!who) return;
   e.preventDefault(); // Space would otherwise scroll or press buttons
-  if (!e.repeat && turn?.speaker === 'customer' && twoRooms()) {
+  if (!e.repeat && turn?.speaker === 'customer' && herTurnsByVad()) {
     finishTurn(); // the scammer talks over Margaret: close her turn so his can start
     vad.reset();
   }
@@ -346,6 +356,7 @@ function onKeyDown(e: KeyboardEvent) {
   turn = { speaker: who, pressedAt: performance.now(), chunks: 0, labelId: null, pcm: [], peak: 0 };
   set({ speaker: who, level: 0 });
   if (who === 'caller') setEar(true);
+  else setRoom(true);
 }
 
 function onKeyUp(e: KeyboardEvent) {
@@ -356,7 +367,7 @@ function onKeyUp(e: KeyboardEvent) {
 }
 
 function onBlur() {
-  if (turn?.speaker === 'caller' || (turn && !twoRooms())) finishTurn(); // window lost focus mid-turn: keyup will never arrive
+  if (turn && !(turn.speaker === 'customer' && herTurnsByVad())) finishTurn(); // window lost focus mid-turn: keyup will never arrive
 }
 
 function onMicChunk(pcm: ArrayBuffer, level: number) {
@@ -440,7 +451,7 @@ async function connectHeadset(dev: Devices) {
   if (!ctx || !stream) return;
   // No auto gain: in a quiet room it turns hiss up until it sounds like talking.
   headStream = await navigator.mediaDevices.getUserMedia({
-    audio: { ...MIC_OPTS, autoGainControl: false, deviceId: { exact: dev.margaretMic } },
+    audio: { ...MIC_OPTS, echoCancellation: false, autoGainControl: false, deviceId: { exact: dev.margaretMic } },
   });
   const her = ctx.createMediaStreamSource(headStream);
   toSpeakers = ctx.createGain();
@@ -466,12 +477,25 @@ function setEar(open: boolean) {
 }
 
 function setRoom(open: boolean) {
-  if (ctx && toSpeakers) toSpeakers.gain.setTargetAtTime(open ? 1 : 0, ctx.currentTime, 0.02); // a 20 ms fade, no click
+  if (!ctx || !toSpeakers) return;
+  // Close once the delayed audio has played out, so the room hears her last word; a 20 ms fade, no click.
+  toSpeakers.gain.cancelScheduledValues(ctx.currentTime);
+  toSpeakers.gain.setTargetAtTime(open ? 1 : 0, ctx.currentTime + (open ? 0 : PREROLL / 10), 0.02);
 }
 
 function onHeadsetChunk(pcm: ArrayBuffer, level: number) {
   if (!rt || state.mode === 'takeover') return;
   set({ herLevel: Math.min(1, level * 6) });
+  if (!herTurnsByVad()) {
+    // Y is held for her: her headset mic feeds the turn, like the laptop mic does for Space.
+    if (turn?.speaker !== 'customer') return;
+    if (!turn.labelId) turn.labelId = rt.label(LABEL.customer);
+    rt.append(pcm);
+    turn.pcm.push(pcm);
+    turn.peak = Math.max(turn.peak, level);
+    turn.chunks++;
+    return set({ level: Math.min(1, level * 6) });
+  }
   // shortcut: one turn at a time, so her words while the scammer holds Space are dropped; upgrade if overlapping speech matters.
   if (turn && turn.speaker !== 'customer') {
     preroll = [];

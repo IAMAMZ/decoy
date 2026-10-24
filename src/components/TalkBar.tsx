@@ -5,6 +5,7 @@ import {
   listAudioDevices,
   setAudio,
   startCall,
+  herTurnsByVad,
   twoRooms,
   typeTurn,
   useTalk,
@@ -23,7 +24,7 @@ export function TalkBar() {
     <div className="controls talkbar">
       <span className={`src ${live ? 'src-on' : ''}`}>{live ? 'MIC · live' : `MIC · ${t.status}`}</span>
       <Key k="Space" who="caller" t={t} />
-      <Key k={twoRooms() ? 'Headset' : 'Y'} who="customer" t={t} locked={t.mode === 'takeover'} />
+      <Key k={herTurnsByVad() ? 'Headset' : 'Y'} who="customer" t={t} locked={t.mode === 'takeover'} />
       {live && (
         <form
           className="type-turn"
@@ -111,7 +112,7 @@ export function StartCall() {
             <kbd>Space</kbd> hold to talk as the <strong>scammer</strong>
           </li>
           <li>
-            {twoRooms() ? (
+            {herTurnsByVad() ? (
               <>
                 <strong>Margaret</strong> talks on her headset; her turns start by themselves
               </>
@@ -178,6 +179,15 @@ function DevicePicker() {
         </label>
       ))}
       {twoRooms() && (
+        <label>
+          Margaret's turns
+          <select value={t.settings.herTurns ?? 'vad'} onChange={(e) => setAudio({ herTurns: e.target.value as 'vad' | 'key' })}>
+            <option value="vad">Voice detection (VAD)</option>
+            <option value="key">Hold Y (push-to-talk on this laptop)</option>
+          </select>
+        </label>
+      )}
+      {herTurnsByVad() && (
         <label>
           Margaret start level {vad.toFixed(3)}
           <input
