@@ -54,6 +54,8 @@ Check it's connected: Decoy's screen says **"live · real Chrome"** in its top-r
 
 Before the call starts, the "Start call" card covers the page; start the call to use the browser.
 
+Cookie banners are hidden in Decoy's Chrome, not clicked: no consent is given or refused. RBC's banner has no reject option (its X says closing accepts all cookies), and it covered the bottom third of the screen. The list of hidden banner containers is `COOKIE_BANNERS` in `backend/browser.py`.
+
 Open a page from a script or terminal (for testing, until the agent drives the browser):
 
 ```bash

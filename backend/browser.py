@@ -23,6 +23,27 @@ SEND_TIMEOUT_S = 5  # a client that can't take a message this long is dropped
 MAX_QUEUED_FRAMES = 2  # a slow client skips frames instead of falling behind
 CURSOR_MOVE_S = 0.75  # matches the frontend cursor transition
 
+# Cookie banners cover the bottom of the screen (RBC's covers about a third). Hide them instead of
+# clicking: RBC's only buttons are "Accept All", "Manage Settings" and an X whose label says closing
+# accepts all cookies. Hiding makes no consent choice either way. Containers of common consent tools:
+COOKIE_BANNERS = [
+    "#onetrust-consent-sdk",  # OneTrust (RBC)
+    "#CybotCookiebotDialog",  # Cookiebot
+    "#truste-consent-track",  # TrustArc
+    ".qc-cmp2-container",  # Quantcast
+    "#didomi-host",  # Didomi
+]
+HIDE_COOKIE_BANNERS = """(() => {
+  const add = () => {
+    const style = document.createElement('style');
+    style.textContent = `%s { display: none !important; }`;
+    (document.head || document.documentElement).appendChild(style);
+  };
+  // Init scripts can run before the page has an <html> element; wait for it then.
+  if (document.documentElement) add();
+  else document.addEventListener('DOMContentLoaded', add, {once: true});
+})();""" % ", ".join(COOKIE_BANNERS)
+
 clients: dict[WebSocket, asyncio.Queue] = {}  # each client has its own outbox, so none can stall the rest
 page = None
 lock: asyncio.Lock | None = None  # one run drives the page at a time
@@ -166,7 +187,7 @@ async def find(pattern: str) -> dict | None:
           // Really on screen: not hidden, has a size, and nothing else (a closed menu, a cookie banner) covers it.
           const seen = (el, range) => {
             if (el.checkVisibility && !el.checkVisibility({checkOpacity: true, checkVisibilityCSS: true})) return false;
-            el.scrollIntoView({block: 'center'});
+            el.scrollIntoView({block: 'center', behavior: 'instant'});  // pages with smooth scrolling would still be moving
             const r = range.getBoundingClientRect();
             if (r.width < 1 || r.height < 1 || r.bottom < 0 || r.top > innerHeight) return false;
             const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
@@ -189,7 +210,7 @@ async def find(pattern: str) -> dict | None:
             const mark = document.createElement('mark');
             mark.style.cssText = 'background:rgba(255,91,55,.22);outline:3px solid #ff5b37;border-radius:3px;color:inherit;padding:0 2px';
             range.surroundContents(mark);
-            mark.scrollIntoView({block: 'center'});
+            mark.scrollIntoView({block: 'center', behavior: 'instant'});
             const r = mark.getBoundingClientRect();
             return {text: m[0], context: context(el, m[0]), box: {x: r.x, y: r.y, width: r.width, height: r.height}};
           }
@@ -272,6 +293,7 @@ async def start() -> None:
     # own pages ("This site can't be reached") don't follow the laptop's system language.
     _chrome = await _pw.chromium.launch(channel="chrome", headless=True, args=["--lang=en-CA"])
     ctx = _ctx = await _chrome.new_context(viewport=VIEWPORT, locale="en-CA")
+    await ctx.add_init_script(HIDE_COOKIE_BANNERS)  # every page and frame, before its own scripts
     page = await ctx.new_page()
 
     def on_nav(frame) -> None:
