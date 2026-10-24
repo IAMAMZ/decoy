@@ -68,4 +68,7 @@ Everything goes through one function: `inject(event)` from `useCallEvents()` in 
 - **The Boson key is visible in the page.** Fine on the demo laptop, but never deploy or share a `npm run build` made with `.env.local`, because the key is baked into it. `.env.local` is gitignored.
 - **Testing without a real mic:** Chrome's fake-mic flag played silence in headless tests, and the speech-to-text then invents text ("I'm not a good person"). If a transcript looks like nonsense, check that the mic is actually picking up sound.
 - **Real Chrome browsing was removed with the backend.** The agent screen plays a scripted animation. The Playwright service that drove real Chrome (RBC's live site, RDAP) is in git history at commit `dc958d9`. Run it again and add `?browser` to the URL if we want it back.
-- **SMS is on hold.** If we do it, ntfy (free push notification, works from the browser) is the simplest option.
+- **Family alert = ntfy push, not SMS** (`src/tools/notifyFamily.ts`). It fires `notify_family` once per call when the mode first leaves monitoring. To see it buzz:
+  1. Put a random topic in `VITE_NTFY_TOPIC` in `.env.local`.
+  2. Install the free ntfy app on a phone and subscribe to that topic.
+  3. The plain replay doesn't send it; add `?notify` to buzz during a replay. Anyone who knows the topic can read it, so keep the message generic.

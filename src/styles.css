@@ -613,3 +613,57 @@ kbd {
 .start-card kbd { margin-right: 8px; }
 .start-card .talk-error { margin: 0 0 16px; }
 .btn:disabled { opacity: 0.5; cursor: default; }
+.type-turn input {
+  width: 240px;
+  font: 13px var(--sans);
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 9px;
+}
+.type-turn input:focus { outline: none; border-color: var(--faint); }
+
+/* ---------- stage: live transcript + tool calls ---------- */
+.live-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  grid-template-rows: minmax(0, 1fr);
+  gap: 1px;
+  background: var(--line);
+  min-height: 0;
+}
+.live-grid .cell { background: var(--bg); grid-area: auto; }
+.call { cursor: pointer; }
+.call:hover { background: var(--surface); }
+.call-label { margin-left: 8px; font-family: var(--sans); font-size: 12px; color: var(--faint); }
+.call-brain .fn { color: var(--accent); }
+.call-brain .val { color: var(--text); }
+.raw {
+  margin: 8px 0 2px;
+  padding: 10px 12px;
+  border-radius: 4px;
+  background: var(--surface-2);
+  font: 12px/1.45 var(--mono);
+  color: var(--text-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+.rail-evidence { margin: 12px 0 0; font-size: 13px; color: var(--text-2); }
+.rail-flags { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.rail-flags li { font-size: 13px; padding: 3px 8px; border-radius: 3px; background: var(--surface-2); color: var(--text); }
+.rail-flags li.hard { background: var(--accent); color: var(--bg); }
+.rail-intel em { font-style: normal; font-size: 14px; color: var(--text-2); }
+@media (max-width: 1180px) {
+  .live-grid { grid-template-columns: 1fr; grid-template-rows: none; }
+  .live-grid .cell { max-height: 460px; }
+}
+
+/* ---------- stage center: optional real screen above transcript + tool calls ---------- */
+.stage-center { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.stage-center > .live-grid { flex: 1; }
+.stage-center.with-screen > .agent-screen { flex: 0 0 54%; min-height: 0; padding: 12px 20px 8px; gap: 8px; border-bottom: 1px solid var(--line); }
+.stage-center.with-screen .as-caption { font-size: 14px; }
+.stage-center.with-screen .as-view { display: flex; justify-content: center; }
+.stage-center.with-screen .as-shot { width: auto; height: 100%; max-width: 100%; }

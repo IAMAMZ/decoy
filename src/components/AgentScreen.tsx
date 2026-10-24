@@ -187,6 +187,23 @@ function Content({ tool, highlighted }: { tool: ToolCall; highlighted: boolean }
       </ol>
     );
   }
+  if (tool.tool === 'check_domain' && r.registered === false) {
+    return (
+      <div className="as-page enter">
+        <h3>Domain registry lookup</h3>
+        <dl className="whois">
+          <dt>Domain</dt>
+          <dd>{r.domain}</dd>
+          <dt>Registered</dt>
+          <dd data-target="highlight" className={highlighted ? 'hl' : ''}>
+            No record: this domain doesn’t exist
+          </dd>
+          <dt>Source</dt>
+          <dd>RDAP (live registry)</dd>
+        </dl>
+      </div>
+    );
+  }
   if (tool.tool === 'check_domain') {
     return (
       <div className="as-page enter">

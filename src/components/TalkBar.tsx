@@ -1,4 +1,4 @@
-import { endCall, startCall, useTalk, type Talker } from '../audio';
+import { endCall, startCall, typeTurn, useTalk, type Talker } from '../audio';
 
 const NAMES: Record<Talker, string> = { caller: 'Scammer', customer: 'Margaret' };
 
@@ -11,6 +11,19 @@ export function TalkBar() {
       <span className={`src ${live ? 'src-on' : ''}`}>{live ? 'MIC · live' : `MIC · ${t.status}`}</span>
       <Key k="Space" who="caller" t={t} />
       <Key k="Y" who="customer" t={t} locked={t.mode === 'takeover'} />
+      {live && (
+        <form
+          className="type-turn"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const input = e.currentTarget.elements.namedItem('line') as HTMLInputElement;
+            typeTurn(input.value);
+            input.value = '';
+          }}
+        >
+          <input name="line" placeholder="Or type as the scammer…" autoComplete="off" />
+        </form>
+      )}
       <span className={`decoy-talk ${t.aiSpeaking ? 'on' : ''}`}>{t.aiSpeaking ? 'Decoy speaking' : ''}</span>
       {t.error && <span className="talk-error">{t.error}</span>}
       <nav>

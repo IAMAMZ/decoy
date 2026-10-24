@@ -30,6 +30,10 @@ export const TOOL_LABEL: Record<string, string> = {
   take_over_call: 'Take over call',
   log_intel: 'Log intel',
   generate_report: 'Generate report',
+  analyze_turn: 'Higgs brain · assess the line',
+  verify_caller_number: 'Real browser · official number on rbc.com',
+  check_bank_policy: "Real browser · RBC's own fraud rules",
+  check_link: 'Real browser · registry + open the link',
   web_search: 'Search the web',
   open_page: 'Open web page',
   check_domain: 'Check domain registration',
@@ -50,6 +54,7 @@ export function describeResult(tool: string, args: Record<string, any>, r: any):
         ? { text: `Known scam number · ${r.reports} reports · reputation ${r.reputation}`, tone: 'danger' }
         : { text: `No reports · reputation ${r.reputation}`, tone: 'ok' };
     case 'verify_institution':
+      if (!r.official_number) return { text: `No official number on file for ${args.claimed_org}`, tone: 'neutral' };
       return r.match
         ? { text: `Matches ${args.claimed_org}'s official line`, tone: 'ok' }
         : { text: `Not ${args.claimed_org}: official line is ${r.official_number}`, tone: 'danger' };
@@ -61,6 +66,7 @@ export function describeResult(tool: string, args: Record<string, any>, r: any):
     case 'freeze_transaction':
       return { text: `${money(r.amount)} transfer ${r.status}`, tone: 'ok' };
     case 'notify_family':
+      if (r.error) return { text: r.summary, tone: 'neutral' };
       return { text: `${r.via ?? 'Message'} ${r.delivery} to ${args.contact}`, tone: 'ok' };
     case 'take_over_call':
       return { text: `${args.persona} persona is on the line · customer muted`, tone: 'ok' };
@@ -68,6 +74,21 @@ export function describeResult(tool: string, args: Record<string, any>, r: any):
       return { text: `Stored as ${r.record_id}`, tone: 'ok' };
     case 'generate_report':
       return { text: `Report ${r.report_id} filed`, tone: 'ok' };
+    // Yun's real-browser checks: the backend writes the summary; the verdict sets the colour.
+    case 'verify_caller_number':
+    case 'check_bank_policy':
+    case 'check_link': {
+      if (r.error) return { text: r.summary ?? `${tool} couldn't finish`, tone: 'neutral' };
+      const fine = ['match', 'official', 'no_policy_found'].includes(r.verdict);
+      return { text: r.summary, tone: fine ? 'ok' : 'danger' };
+    }
+    case 'analyze_turn': {
+      if (r.error) return { text: r.summary, tone: 'neutral' };
+      const flags = (r.flags ?? []).map((f: string) => f.replace(/_/g, ' ')).join(', ');
+      const found = (r.intel ?? []).map((i: { value: string }) => i.value).join(', ');
+      const parts = [`score ${Number(r.score).toFixed(2)}`, flags || 'no flags', r.evidence, found && `found ${found}`];
+      return { text: parts.filter(Boolean).join(' · '), tone: r.score >= 0.6 ? 'danger' : 'neutral' };
+    }
     case 'web_search':
     case 'open_page':
     case 'check_domain':
