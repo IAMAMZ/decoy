@@ -1,12 +1,13 @@
 """Call the browser service from the agent backend.
 
-    from backend.browser.client import browse
+    from browser.client import browse
     result = await browse("t7", "open_page", {"url": "www.rbcroyalbank.com/customer-service/index.html"})
     result["summary"]  # -> "Official number on www.rbcroyalbank.com: 1-800-769-2511"
 
 Use the same id as the tool_call event you emit, so the dashboard shows this run on
 Decoy's screen. Raises RuntimeError if the tool failed (e.g. no TAVILY_API_KEY).
 """
+
 import asyncio
 import json
 

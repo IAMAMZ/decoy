@@ -14,19 +14,19 @@ From Miran · Oct 23, 2026. The frontend and a real browser service are in the r
 
 ## Run it
 
-Setup once (needs Node 18+, Python 3.14, Google Chrome installed):
+Setup once (needs Node 18+, uv, Google Chrome installed):
 
 ```bash
-cp .env.example .env                    # add BOSON_AI_API_KEY and TAVILY_API_KEY
-pip install -r backend/requirements.txt
-cd frontend && npm install
+cp .env.example backend/.env            # add BOSON_AI_API_KEY and TAVILY_API_KEY
+cd backend && uv sync
+cd ../frontend && npm install
 ```
 
-Then, from the repo root, in two terminals:
+Then in two terminals:
 
 ```bash
-python -m backend.browser.server        # real browser, port 8001
-cd frontend && npm run dev              # app, http://localhost:5173
+cd backend && uv run python -m browser.server   # real browser, port 8001
+cd frontend && npm run dev                      # app, http://localhost:5173
 ```
 
 Useful URLs and keys:
@@ -39,7 +39,7 @@ Useful URLs and keys:
 Gotchas we already hit:
 
 - **Use `127.0.0.1`, not `localhost`, for the backend.** Node resolves `localhost` to IPv6, so the Vite proxy couldn't reach a server bound to 127.0.0.1.
-- **Python 3.14 needs `greenlet==3.2.4` and `playwright==1.55.0`.** Older versions fail to build.
+- **On Python 3.14, Playwright needs `greenlet>=3.2.4`.** It's pinned in `backend/pyproject.toml`; older versions fail to build.
 - **`.env` and `*.wav` are gitignored.** Never commit keys or voice clips.
 
 ---
@@ -63,7 +63,7 @@ Also wire the debug routes the hidden keys call: `POST /debug/takeover` and `POS
 The browsing already works and is real. Call it from `tools.py`:
 
 ```python
-from backend.browser.client import browse
+from browser.client import browse
 
 # Use the same id as your tool_call event so Decoy's screen shows this run.
 result = await browse(call_id, "open_page", {"url": "www.rbcroyalbank.com/customer-service/index.html"})
@@ -113,14 +113,14 @@ These go to `/ws/events` via Yun's `emit()`:
 
 ### 3. Higgs RealTime reference
 
-`my_voice_realtime.py` in the repo root works against Boson. It shows:
+Miran's `my_voice_realtime.py` works against Boson. It was removed from `main` in the backend restructure; get it back with `git show c3f855f:my_voice_realtime.py`. It shows:
 
 - Cloning a voice: `POST /v1/audio/voices`; the API returns the ID under either `voice` or `voice_id`.
 - Opening `wss://api.boson.ai/v1/realtime` with `session.update`. The first update is acknowledged with `session.created`, not `.updated`.
 - Retrying when the voice check returns 429 (rate limit or no credit).
 - Streaming 24 kHz PCM16 output audio.
 
-Run it with `python my_voice_realtime.py --style "warm, slightly confused"` to hear the persona voice.
+Run it with `uv run python my_voice_realtime.py --style "warm, slightly confused"` to hear the persona voice.
 
 ### 4. Avatar
 

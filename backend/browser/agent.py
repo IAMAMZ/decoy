@@ -9,14 +9,16 @@ Tools (same names/args as the dashboard events):
   open_page(url, find=None)    -> loads the page, finds + highlights `find` or the first 1-8xx number
   check_domain(domain)         -> RDAP registry lookup, then tries to open the site
 """
+
 import asyncio
 import json
 import os
 import re
 import urllib.error
 import urllib.request
-from datetime import datetime, timezone
-from typing import Any, Awaitable, Callable
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
+from typing import Any
 from urllib.parse import urlparse
 
 from playwright.async_api import Browser, Page, async_playwright
@@ -261,7 +263,7 @@ def _rdap(domain: str) -> dict:
     if reg:
         when = datetime.fromisoformat(reg.replace("Z", "+00:00"))
         out["registered_on"] = when.date().isoformat()
-        out["age_days"] = (datetime.now(timezone.utc) - when).days
+        out["age_days"] = (datetime.now(UTC) - when).days
     for ent in d.get("entities", []):
         if "registrar" in ent.get("roles", []):
             for field in ent.get("vcardArray", [None, []])[1]:

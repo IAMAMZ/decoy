@@ -1,6 +1,6 @@
 """WebSocket service that runs real browsing for the dashboard.
 
-Run from the repo root:  python -m backend.browser.server   (port 8001)
+Run from backend/:  uv run python -m browser.server   (port 8001)
 
 Any client can send   {"id", "tool", "args"}.
 Every connected client receives the stream, so the dashboard can watch a run that the
@@ -8,6 +8,7 @@ agent backend started:
   {"id", "type": frame|cursor|address|view|loading|caption|card, ...}
 and finally {"id", "type": "result", "result"} or {"id", "type": "error", "message"}.
 """
+
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -18,7 +19,9 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 from .agent import BrowserAgent
 
-load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+# Keys live in backend/.env (repo-root .env also works).
+for env in (Path(__file__).resolve().parents[1] / ".env", Path(__file__).resolve().parents[2] / ".env"):
+    load_dotenv(env)
 agent = BrowserAgent()
 clients: set[WebSocket] = set()
 
