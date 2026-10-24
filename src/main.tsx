@@ -13,6 +13,7 @@ import { Dashboard } from './pages/Dashboard';
 import { Stage } from './pages/Stage';
 import { useFamilyAlert } from './tools/notifyFamily';
 import { useAgent } from './agent/useAgent';
+import { AVATAR_VIDEO, TAKEOVER_LINE } from './agent/avatar';
 import '@fontsource/ibm-plex-sans/400.css';
 import '@fontsource/ibm-plex-sans/500.css';
 import '@fontsource/ibm-plex-sans/600.css';
@@ -22,8 +23,6 @@ import './styles.css';
 
 const REAL_BROWSER = true;
 const BROWSER_OFF: Bridge = { connected: false, sessions: {}, current: null, send: () => {} };
-
-const TAKEOVER_LINE ="This looks like a scam. Don't worry, I'll handle it from here.";
 
 function App() {
   const { state, connected, replay, inject } = useCallEvents();
@@ -52,7 +51,7 @@ function App() {
         if (LIVE) fetch('/debug/takeover', { method: 'POST' });
         else {
           inject(ev('mode', { mode: 'takeover' }));
-          inject(ev('avatar', { text: TAKEOVER_LINE }));
+          inject(ev('avatar', { text: TAKEOVER_LINE, video_url: AVATAR_VIDEO }));
         }
       } else if (e.shiftKey && e.key === 'S') {
         if (LIVE) fetch('/debug/score?value=0.9', { method: 'POST' });

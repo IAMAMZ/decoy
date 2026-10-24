@@ -10,6 +10,7 @@ import type { CallState } from '../events/reducer';
 import type { CallEvent, IntelKind } from '../events/types';
 import { bridge } from '../events/browserBridge';
 import { MIC } from '../events/useCallEvents';
+import { AVATAR_VIDEO, TAKEOVER_LINE } from './avatar';
 import { Brain, type Analysis } from './brain';
 import { officialFor } from './data';
 import { findIntel, formatPhone, intelKey, keywordFlags, type Found } from './extract';
@@ -22,7 +23,6 @@ const NEEDS_WORDS = ['gift_cards', 'remote_access'];
 const POLICY_FLAGS = ['safe_account', 'payment_request', 'remote_access', 'gift_cards'];
 const MAX_RISE = 0.25; // per turn, so the meter climbs instead of jumping
 const MAX_FALL = 0.1;
-const TAKEOVER_LINE = "Margaret, this call is a scam. Your money is safe. You can hang up now; I'll handle it from here.";
 const TACTICS: Record<string, string> = {
   safe_account: 'Safe-account transfer',
   secrecy: 'secrecy demand',
@@ -204,7 +204,7 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
     await r.protect;
     await tool('take_over_call', { persona: 'Margaret' }, () => ({ routing: 'ai_persona', customer_line: 'muted' }));
     r.takeoverAt = Date.now();
-    if (!live.current.avatar) emit('avatar', { text: TAKEOVER_LINE });
+    if (!live.current.avatar) emit('avatar', { text: TAKEOVER_LINE, video_url: AVATAR_VIDEO });
     // Most telling tactic first (TACTICS is in priority order).
     const tactic = Object.keys(TACTICS).filter((f) => r.flags.has(f)).map((f) => TACTICS[f]);
     if (tactic.length) addIntel(r, 'tactic', tactic.slice(0, 2).join(' with '));
