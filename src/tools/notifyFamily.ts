@@ -1,4 +1,4 @@
-// notify_family: alerts Margaret's family when Decoy starts protecting her.
+// notify_family: alerts the customer's family when Decoy starts protecting them.
 // Sent as an ntfy push notification (free, no account, no server, works from the browser):
 // install the ntfy app, subscribe to VITE_NTFY_TOPIC, and the phone buzzes.
 // In a real product this would be an SMS; ntfy stands in for the demo.

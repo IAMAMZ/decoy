@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import type { CallState } from '../events/reducer';
 import { fmtClock } from './format';
 
-const WHO = { caller: 'Caller', customer: 'Margaret', ai: 'Margaret (AI)' } as const;
+const WHO = { caller: 'Caller', customer: 'Customer', ai: 'Customer (AI)' } as const;
 
 const MARKERS = [
   { mode: 'protecting', text: 'Protecting customer' },

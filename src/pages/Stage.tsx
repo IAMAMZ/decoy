@@ -8,6 +8,7 @@ import { ToolLog } from '../components/ToolLog';
 import { Transcript } from '../components/Transcript';
 import type { Bridge } from '../events/browserBridge';
 import type { CallState } from '../events/reducer';
+import type { CallEvent } from '../events/types';
 import { MIC } from '../events/useCallEvents';
 
 // The demo layout: the phone, the live transcript, every tool call the agent makes, and the
@@ -15,18 +16,18 @@ import { MIC } from '../events/useCallEvents';
 // the real checks are visible; without it, transcript and tool calls fill the space.
 const MODE_TEXT = {
   monitoring: 'Listening',
-  protecting: 'Protecting Margaret',
+  protecting: 'Protecting the customer',
   takeover: 'Decoy has the call',
 };
 
-export function Stage({ state, browser }: { state: CallState; browser: Bridge }) {
+export function Stage({ state, browser, inject }: { state: CallState; browser: Bridge; inject: (ev: CallEvent) => void }) {
   const now = useNow(250);
   const score = useTween(state.score);
   const elapsed = state.startedAt ? (state.endedAt ?? now) - state.startedAt : 0;
 
   return (
     <div className="stage">
-      <PhoneScreen state={state} />
+      <PhoneScreen state={state} inject={inject} />
       <div className="stage-main">
         <header className="stage-head">
           <Wordmark />
