@@ -269,7 +269,6 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
       checks.length ? `${checks[0].replace(/\.$/, '')}.` : '',
       r.flags.size ? `Signals: ${[...r.flags].map((f) => f.replace(/_/g, ' ')).join(', ')}.` : '',
       r.takeoverAt ? `Decoy took over as Margaret${aiTurns ? ` for ${aiTurns} turn${aiTurns === 1 ? '' : 's'}` : ''} (${minutesWasted} min stalled).` : '',
-      r.frozen ? `$${r.frozen.toLocaleString('en-US')} transfer frozen; family notified.` : '',
       intelItems.length ? `Captured ${intelItems.join(', ')}.` : '',
       `Report ${reportId} filed.`,
     ];
@@ -288,7 +287,11 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
     await tool('generate_report', { call_id: r.callId }, async () => {
       if (brain && s.transcript.length > 0) {
         const findings = s.tools
-          .filter((t) => t.status === 'done' && !['analyze_turn', 'log_intel', 'get_pending_transactions', 'open_page', 'generate_report'].includes(t.tool))
+          .filter(
+            (t) =>
+              t.status === 'done' &&
+              !['analyze_turn', 'log_intel', 'get_pending_transactions', 'freeze_transaction', 'open_page', 'generate_report'].includes(t.tool),
+          )
           .map((t) => `- ${t.tool}: ${describeResult(t.tool, t.args, t.result).text}`);
         const intelLines = s.intel.map((i) => `- ${INTEL_LABEL[i.kind]}: ${i.value}`);
         const facts = [
@@ -298,7 +301,6 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
           `Final mode: ${s.mode} (peak scam score ${Math.round(r.score * 100)}%)`,
           `Red flags: ${[...r.flags].join(', ') || 'none'}`,
           `Takeover duration: ${r.takeoverAt ? `${minutesWasted} min (${aiTurns} AI turns stalling caller)` : 'did not take over'}`,
-          `Money protected: $${r.frozen.toLocaleString('en-US')}`,
           findings.length ? `Tool findings:\n${findings.join('\n')}` : '',
           intelLines.length ? `Captured intel:\n${intelLines.join('\n')}` : '',
         ]
