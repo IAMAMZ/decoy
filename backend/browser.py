@@ -9,12 +9,15 @@ loading|caption|cursor|card|result|error, ...}.
 
 import asyncio
 import contextlib
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import WebSocket
 from playwright.async_api import async_playwright
 
-VIEWPORT = {"width": 1280, "height": 800}  # LiveScreen draws frames at this size
+# 16:9, so the frame fills the wide screen panel on the stage. Keep in sync with PAGE_W/PAGE_H in
+# src/components/LiveScreen.tsx and the .as-shot aspect-ratio in src/styles.css.
+VIEWPORT = {"width": 1280, "height": 720}
 START_URL = "https://www.rbcroyalbank.com/"
 SEND_TIMEOUT_S = 5  # a client that can't take a message this long is dropped
 MAX_QUEUED_FRAMES = 2  # a slow client skips frames instead of falling behind
@@ -26,7 +29,7 @@ lock: asyncio.Lock | None = None  # one run drives the page at a time
 inputs: asyncio.Queue | None = None  # a person's clicks and keys, applied strictly in order
 run_id = "live"  # frames follow the latest run
 last = {"address": "", "frame": None}
-_pw = _chrome = _worker = None
+_pw = _chrome = _ctx = _worker = None
 _opens = 0
 
 
@@ -242,15 +245,33 @@ async def _input_worker() -> None:
 # ---------- lifecycle ----------
 
 
+async def warm(urls: list[str]) -> None:
+    """Load pages once in a hidden tab, so a check opening them later hits a warm cache and connection.
+
+    The hidden tab shares the streamed page's cache but isn't streamed, so nothing shows on the screen.
+    """
+    hidden = await _ctx.new_page()
+    try:
+        for url in urls:
+            t0 = time.perf_counter()
+            try:
+                await hidden.goto(url, timeout=20000, wait_until="load")
+                print(f"warmed {url} in {time.perf_counter() - t0:.1f}s")
+            except Exception as e:  # a slow page only means its check starts cold
+                print(f"warm {url} failed: {e}")
+    finally:
+        await hidden.close()
+
+
 async def start() -> None:
-    global page, lock, inputs, _pw, _chrome, _worker
+    global page, lock, inputs, _pw, _chrome, _ctx, _worker
     lock = asyncio.Lock()
     inputs = asyncio.Queue()
     _pw = await async_playwright().start()
     # The installed Google Chrome, so no separate browser download is needed. English UI, so Chrome's
     # own pages ("This site can't be reached") don't follow the laptop's system language.
     _chrome = await _pw.chromium.launch(channel="chrome", headless=True, args=["--lang=en-CA"])
-    ctx = await _chrome.new_context(viewport=VIEWPORT, locale="en-CA")
+    ctx = _ctx = await _chrome.new_context(viewport=VIEWPORT, locale="en-CA")
     page = await ctx.new_page()
 
     def on_nav(frame) -> None:
@@ -267,7 +288,8 @@ async def start() -> None:
         await popup.close()
         await page.goto(url)
 
-    ctx.on("page", lambda p: asyncio.create_task(on_popup(p)))
+    # Only tabs the streamed page opens; the hidden warm-up tab must not be treated as one.
+    page.on("popup", lambda p: asyncio.create_task(on_popup(p)))
 
     cdp = await ctx.new_cdp_session(page)
 

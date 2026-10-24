@@ -7,6 +7,7 @@ Run from the repo root:   python backend/server.py   (port 8001)
   tools/       the checks (RBC demo), registered in tools/__init__.py
 """
 
+import asyncio
 from contextlib import asynccontextmanager
 
 import uvicorn
@@ -15,11 +16,13 @@ from fastapi import FastAPI
 import browser
 from routes import browser as browser_routes
 from routes import tools as tool_routes
+from tools import warm_urls
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     await browser.start()
+    asyncio.create_task(browser.warm(warm_urls()))  # in the background: the server is usable right away
     yield
     await browser.stop()
 

@@ -36,7 +36,7 @@ export const bridge = { connected: false };
 // commit dc958d9, to bring it back). Only try to reach it when asked with ?browser.
 const ENABLED = new URLSearchParams(window.location.search).has('browser');
 
-// A person's input on Decoy's screen (backend/browser_server.py). x/y are page pixels (1280x800).
+// A person's input on Decoy's screen (backend/server.py). x/y are page pixels (1280x720).
 export type BrowserInput =
   | { action: 'click'; x: number; y: number; count: number }
   | { action: 'move' | 'wheel'; x: number; y: number; dx?: number; dy?: number }

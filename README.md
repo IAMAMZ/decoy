@@ -105,12 +105,20 @@ backend/
    └─ rdap.py       domain registration lookup
 ```
 
+### Adding a browser tool
+
+1. **Backend:** write `async def my_check(args, rid) -> dict` in `backend/tools/`, then add a `Tool(...)` to `REGISTRY` in `backend/tools/__init__.py`. It's served at `POST /browser/tools/my_check` with no route changes.
+2. **Warm its pages:** if the tool opens fixed pages, list them in the Tool's `warm=(...)`. At startup the backend loads them once in a hidden tab, so the first check during a call doesn't pay for a cold page load. Pages that come from the call (a link the caller gives) can't be warmed.
+3. **Frontend:** add the name to `REAL_CHECKS` in `src/agent/tools.ts`, call it from `src/agent/useAgent.ts` with `tools.realCheck(...)` (only when `bridge.connected`), and add its label and result text to `TOOL_LABEL` / `describeResult` in `src/components/format.ts`.
+
+The screen's page size (1280×720) lives in three places that must match: `VIEWPORT` in `backend/browser.py`, `PAGE_W`/`PAGE_H` in `src/components/LiveScreen.tsx`, and the `.as-shot` aspect-ratio in `src/styles.css`.
+
 ## Browser stream protocol
 
 Clients connect to `ws://127.0.0.1:8001/browser/ws` (the Vite dev server proxies `/browser` to it).
 
-- **Server → clients:** `{"id", "type": frame|address|view|loading|caption|cursor|card|result|error, ...}`, the format `src/events/browserBridge.ts` reads. Frames are base64 JPEG at 1280×800.
-- **Client → server, a person's input:** `{"type": "input", "action": click|move|wheel|type|key|navigate|back|forward|reload, ...}` with `x`/`y` in page pixels (1280×800).
+- **Server → clients:** `{"id", "type": frame|address|view|loading|caption|cursor|card|result|error, ...}`, the format `src/events/browserBridge.ts` reads. Frames are base64 JPEG at 1280×720.
+- **Client → server, a person's input:** `{"type": "input", "action": click|move|wheel|type|key|navigate|back|forward|reload, ...}` with `x`/`y` in page pixels (1280×720).
 - **Client → server:** `{"id", "tool": "open_page", "args": {"url"}}` opens a page. Fraud checks go through `/browser/tools`.
 
 Not built yet: the LLM that decides when to run the checks, and the replay mode's browse steps (use `?mic&browser`, not `?browser` alone).
