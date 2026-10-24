@@ -4,8 +4,9 @@ import type { Bridge, Session } from '../events/browserBridge';
 // Decoy's screen when the real browser service is connected: Chrome's live frames,
 // with the cursor drawn where the agent is actually pointing. A person can drive it too:
 // click, scroll and type on the page, or use the address bar and back/forward/reload.
+// Chrome's viewport in backend/browser.py (VIEWPORT); the .as-shot aspect-ratio in styles.css matches.
 const PAGE_W = 1280;
-const PAGE_H = 800;
+const PAGE_H = 720;
 // Keys sent as presses; everything else arrives as typed text (so IME input works too).
 const SPECIAL = new Set(['Enter', 'Backspace', 'Delete', 'Tab', 'Escape', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'PageUp', 'PageDown']);
 const MOVE_MS = 80; // hover updates at most this often
@@ -60,7 +61,7 @@ function Window({ s, send }: { s: Session; send: Bridge['send'] }) {
   const [targetPos, setTargetPos] = useState<{ x: number; y: number } | null>(null);
   const target = s.cursor && 'target' in s.cursor ? s.cursor.target : null;
 
-  // Screen pixels -> Chrome's page pixels (the frame is drawn at 1280x800, scaled to fit).
+  // Screen pixels -> Chrome's page pixels (the frame is drawn at PAGE_W x PAGE_H, scaled to fit).
   const toPage = (e: { clientX: number; clientY: number }) => {
     const r = shot.current!.getBoundingClientRect();
     return { x: ((e.clientX - r.left) / r.width) * PAGE_W, y: ((e.clientY - r.top) / r.height) * PAGE_H };
