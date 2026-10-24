@@ -38,10 +38,18 @@ export function ReplayControls({
       <nav>
         <a href={`/${window.location.search}`}>Stage</a>
         <a href={`/dashboard${window.location.search}`}>Dashboard</a>
+        <a href={withBrowser()}>Browser</a>
         <a href={`/call${window.location.search}`}>Call</a>
         <a href={`/caller${window.location.search}`}>Caller</a>
       </nav>
       <span className="keys">Space play · R restart · ⇧T takeover · ⇧S score · H hide</span>
     </div>
   );
+}
+
+// The stage with the real browser (backend/server.py) on: the same query plus ?browser.
+function withBrowser(): string {
+  const q = new URLSearchParams(window.location.search);
+  if (q.has('browser')) return `/${window.location.search}`;
+  return `/${window.location.search ? `${window.location.search}&` : '?'}browser`;
 }
