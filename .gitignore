@@ -30,8 +30,8 @@ AGENTS.override.md
 CLAUDE.md
 CLAUDE.local.md
 .agents/
-.claude/
-.codex/
+.claude
+.codex
 paseo.json
 
 # OS
