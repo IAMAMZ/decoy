@@ -9,6 +9,7 @@
 //
 // Manual overrides (Shift+T / Shift+S) go through the same mode changes, so they run the same steps.
 import { useEffect, useRef } from 'react';
+import { describeResult, INTEL_LABEL } from '../components/format';
 import type { CallState } from '../events/reducer';
 import type { CallEvent, IntelKind } from '../events/types';
 import { bridge } from '../events/browserBridge';
@@ -70,6 +71,7 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
   // ---- call lifecycle ----
   useEffect(() => {
     if (!MIC || !state.callId || state.status !== 'active' || run.current?.callId === state.callId) return;
+    run.current?.brain?.close();
     const r: Run = {
       callId: state.callId,
       brain: new Brain(),
@@ -97,7 +99,6 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
     const r = run.current;
     if (!MIC || !r || state.status !== 'ended' || r.ended) return;
     r.ended = true;
-    r.brain?.close();
     finishCall(r);
   }, [state.status]);
 
@@ -249,21 +250,77 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
   async function finishCall(r: Run) {
     const s = live.current;
     const minutes = r.takeoverAt ? ((s.endedAt ?? Date.now()) - r.takeoverAt) / 60000 : 0;
+    const minutesWasted = Math.round(minutes * 10) / 10;
     const reportId = `FR-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${r.callId.slice(-4).toUpperCase()}`;
-    await tool('generate_report', { call_id: r.callId }, () => ({ report_id: reportId }));
-    const intel = s.intel.filter((i) => i.kind !== 'tactic').map((i) => i.value);
-    const parts = [
-      r.claimedOrg ? `Caller impersonated ${r.claimedOrg}.` : 'Suspected scam call.',
+
+    const checks = s.tools
+      .filter((t) => t.status === 'done' && ['verify_caller_number', 'verify_institution', 'check_bank_policy', 'check_link', 'check_domain'].includes(t.tool))
+      .map((t) => describeResult(t.tool, t.args, t.result).text)
+      .filter(Boolean);
+    const intelItems = s.intel.filter((i) => i.kind !== 'tactic').map((i) => `${INTEL_LABEL[i.kind].toLowerCase()} ${i.value}`);
+    const aiTurns = s.transcript.filter((l) => l.speaker === 'ai').length;
+    const fallbackParts = [
+      r.claimedOrg
+        ? `Caller (${s.callerNumber ?? 'unknown'}) impersonated ${r.claimedOrg} (peak risk ${Math.round(r.score * 100)}%).`
+        : s.evidence
+          ? `${s.evidence.replace(/\.$/, '')} (peak risk ${Math.round(r.score * 100)}%).`
+          : 'Suspected scam call.',
+      s.evidence && r.claimedOrg ? `${s.evidence.replace(/\.$/, '')}.` : '',
+      checks.length ? `${checks[0].replace(/\.$/, '')}.` : '',
       r.flags.size ? `Signals: ${[...r.flags].map((f) => f.replace(/_/g, ' ')).join(', ')}.` : '',
-      intel.length ? `Captured ${intel.join(', ')}.` : '',
+      r.takeoverAt ? `Decoy took over as Margaret${aiTurns ? ` for ${aiTurns} turn${aiTurns === 1 ? '' : 's'}` : ''} (${minutesWasted} min stalled).` : '',
       r.frozen ? `$${r.frozen.toLocaleString('en-US')} transfer frozen; family notified.` : '',
+      intelItems.length ? `Captured ${intelItems.join(', ')}.` : '',
       `Report ${reportId} filed.`,
     ];
+    const fallbackReport = fallbackParts.filter(Boolean).join(' ');
+
+    // Show the contextual summary immediately when the call ends, then upgrade with Higgs's narrative if available.
     emit('summary', {
-      minutes_wasted: Math.round(minutes * 10) / 10,
+      minutes_wasted: minutesWasted,
       dollars_protected: r.frozen,
       intel_count: s.intel.length,
-      report: parts.filter(Boolean).join(' '),
+      report: fallbackReport,
     });
+
+    const brain = r.brain;
+    let finalReport = fallbackReport;
+    await tool('generate_report', { call_id: r.callId }, async () => {
+      if (brain && s.transcript.length > 0) {
+        const findings = s.tools
+          .filter((t) => t.status === 'done' && !['analyze_turn', 'log_intel', 'get_pending_transactions', 'open_page', 'generate_report'].includes(t.tool))
+          .map((t) => `- ${t.tool}: ${describeResult(t.tool, t.args, t.result).text}`);
+        const intelLines = s.intel.map((i) => `- ${INTEL_LABEL[i.kind]}: ${i.value}`);
+        const facts = [
+          `Report ID: ${reportId}`,
+          `Caller number: ${s.callerNumber ?? 'unknown'}`,
+          `Claimed organisation: ${r.claimedOrg || 'none'}`,
+          `Final mode: ${s.mode} (peak scam score ${Math.round(r.score * 100)}%)`,
+          `Red flags: ${[...r.flags].join(', ') || 'none'}`,
+          `Takeover duration: ${r.takeoverAt ? `${minutesWasted} min (${aiTurns} AI turns stalling caller)` : 'did not take over'}`,
+          `Money protected: $${r.frozen.toLocaleString('en-US')}`,
+          findings.length ? `Tool findings:\n${findings.join('\n')}` : '',
+          intelLines.length ? `Captured intel:\n${intelLines.join('\n')}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n');
+        const aiText = await brain.summarize(facts);
+        if (aiText) {
+          const clean = aiText.replace(/\s*Report FR-[\w-]+ filed\.?$/i, '').replace(/\.?\s*$/, '.');
+          finalReport = clean.includes(reportId) ? clean : `${clean} Report ${reportId} filed.`;
+        }
+      }
+      brain?.close();
+      return { report_id: reportId, summary: finalReport };
+    });
+
+    if (finalReport !== fallbackReport) {
+      emit('summary', {
+        minutes_wasted: minutesWasted,
+        dollars_protected: r.frozen,
+        intel_count: s.intel.length,
+        report: finalReport,
+      });
+    }
   }
 }

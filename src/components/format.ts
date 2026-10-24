@@ -74,7 +74,7 @@ export function describeResult(tool: string, args: Record<string, any>, r: any):
     case 'log_intel':
       return { text: `Stored as ${r.record_id}`, tone: 'ok' };
     case 'generate_report':
-      return { text: `Report ${r.report_id} filed`, tone: 'ok' };
+      return { text: r.summary ? `Report ${r.report_id} · ${r.summary}` : `Report ${r.report_id} filed`, tone: 'ok' };
     // Yun's real-browser checks: the backend writes the summary; the verdict sets the colour.
     case 'verify_caller_number':
     case 'check_bank_policy':
