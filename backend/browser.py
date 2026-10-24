@@ -211,8 +211,11 @@ async def open_page(url: str, rid: str = "live") -> dict:
 
 
 async def standby() -> None:
-    """Show Decoy's start page, quietly: no "Opening…" caption or result, just the waiting line."""
-    async with session("live"):
+    """Show Decoy's start page, quietly: no "Opening…" caption or result, just the waiting line.
+
+    Under a fresh run id, so a screen that still shows the last call's run starts clean.
+    """
+    async with session(next_id()):
         await navigate(START_URL)
         say("Waiting for something to check.")
 

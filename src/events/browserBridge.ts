@@ -119,6 +119,15 @@ export function useBrowserBridge(tools: ToolCall[], callId: string | null, injec
     };
   }, [inject]);
 
+  // A new call starts on Decoy's start page, not on whatever the last call left open. Only when a call
+  // starts, so opening another tab during a call doesn't reset the screen under the investigator.
+  const resetFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!callId || !connected || resetFor.current === callId) return; // once per call, not on a reconnect
+    resetFor.current = callId;
+    fetch('/browser/standby', { method: 'POST' }).catch(() => {});
+  }, [callId, connected]);
+
   useEffect(() => {
     if (tools.length === 0 && sent.current.size) {
       sent.current.clear(); // replay restarted
