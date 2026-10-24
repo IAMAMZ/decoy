@@ -552,7 +552,7 @@ body {
 }
 
 /* ---------- live screen (real browser) ---------- */
-.as-shot { position: relative; width: 100%; aspect-ratio: 1280 / 800; background: #fff; overflow: hidden; }
+.as-shot { position: relative; width: 100%; aspect-ratio: 1280 / 720; background: #fff; overflow: hidden; } /* Chrome's viewport, backend/browser.py */
 .as-shot img { display: block; width: 100%; height: 100%; }
 /* A person driving the live browser */
 .as-nav { display: flex; gap: 2px; }
@@ -615,6 +615,9 @@ kbd {
 .start-card ul { list-style: none; margin: 0 0 22px; padding: 0; display: grid; gap: 10px; color: var(--text-2); }
 .start-card kbd { margin-right: 8px; }
 .start-card .talk-error { margin: 0 0 16px; }
+.devices { display: grid; gap: 10px; margin: 0 0 22px; }
+.devices label { display: grid; gap: 4px; font: 12px var(--sans); color: var(--text-2); }
+.devices select { font: 13px var(--sans); color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
 .btn:disabled { opacity: 0.5; cursor: default; }
 .type-turn input {
   width: 240px;
@@ -662,3 +665,11 @@ kbd {
   .live-grid { grid-template-columns: 1fr; grid-template-rows: none; }
   .live-grid .cell { max-height: 460px; }
 }
+
+/* ---------- stage center: optional real screen above transcript + tool calls ---------- */
+.stage-center { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.stage-center > .live-grid { flex: 1; }
+.stage-center.with-screen > .agent-screen { flex: 0 0 60%; min-height: 0; padding: 12px 20px 8px; gap: 8px; border-bottom: 1px solid var(--line); }
+.stage-center.with-screen .as-caption { font-size: 14px; }
+.stage-center.with-screen .as-view { display: flex; justify-content: center; }
+.stage-center.with-screen .as-shot { width: auto; height: 100%; max-width: 100%; }

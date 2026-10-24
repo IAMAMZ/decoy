@@ -1,5 +1,4 @@
-// import { AgentScreen } from '../components/AgentScreen';
-// import { LiveScreen } from '../components/LiveScreen';
+import { LiveScreen } from '../components/LiveScreen';
 import { Wordmark } from '../components/Brand';
 import { FLAG_LABEL, fmtClock, HARD_FLAGS, INTEL_LABEL, useNow, useTween } from '../components/format';
 import { PhoneScreen } from '../components/PhoneScreen';
@@ -12,16 +11,15 @@ import type { CallState } from '../events/reducer';
 import { MIC } from '../events/useCallEvents';
 
 // The demo layout: the phone, the live transcript, every tool call the agent makes, and the
-// facts that matter. Decoy's screen (the browser) is commented out for now; to bring it back,
-// swap the "live" grid below for:
-//   {browser.connected ? <LiveScreen bridge={browser} /> : <AgentScreen tools={state.tools} now={now} />}
+// facts that matter. With the real browser connected (?browser), Decoy's screen sits on top so
+// the real checks are visible; without it, transcript and tool calls fill the space.
 const MODE_TEXT = {
   monitoring: 'Listening',
   protecting: 'Protecting Margaret',
   takeover: 'Decoy has the call',
 };
 
-export function Stage({ state }: { state: CallState; browser: Bridge }) {
+export function Stage({ state, browser }: { state: CallState; browser: Bridge }) {
   const now = useNow(250);
   const score = useTween(state.score);
   const elapsed = state.startedAt ? (state.endedAt ?? now) - state.startedAt : 0;
@@ -37,9 +35,12 @@ export function Stage({ state }: { state: CallState; browser: Bridge }) {
           <span className="elapsed">{fmtClock(elapsed)}</span>
         </header>
         <div className="stage-body">
-          <div className="live-grid">
-            <Transcript state={state} />
-            <ToolLog tools={state.tools} startedAt={state.startedAt} title="Tool calls" />
+          <div className={`stage-center ${browser.connected ? 'with-screen' : ''}`}>
+            {browser.connected && <LiveScreen bridge={browser} />}
+            <div className="live-grid">
+              <Transcript state={state} />
+              <ToolLog tools={state.tools} startedAt={state.startedAt} title="Tool calls" />
+            </div>
           </div>
           <aside className="rail">
             <div className="rail-block">

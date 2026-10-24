@@ -15,6 +15,7 @@ npm run dev                    # http://localhost:5173
 | `localhost:5173/?mic` | **Live call** with your mic. Press Enter or click Start. |
 | `localhost:5173/` | Scripted replay of `src/data/fake_events.json`, for UI work and as the backup demo |
 | `/dashboard?mic`, `/call?mic` | The same live call on the detail console and the phone screen |
+| `localhost:5173/?mic&headset` | **Two-room demo**: Margaret is a second presenter on a Bluetooth headset paired to this Mac (see below). Picking a Margaret mic on the start card in plain `?mic` does the same. |
 
 Keys in `?mic` mode:
 
@@ -27,6 +28,17 @@ Keys in `?mic` mode:
 | **Enter** / **Esc** | Start / end the call |
 
 Use Chrome, click the page once so it has keyboard focus, and allow the mic.
+
+## Two-room demo (`?mic&headset`, or a Margaret mic picked on the start card)
+
+Margaret's presenter sits in another room with a Bluetooth headset paired to the demo Mac. The scammer (presenter plus audience) uses the Mac's own mic and speakers.
+
+- Her turns are split by loudness by default, so nobody presses Y. To use push-to-talk instead, set "Margaret's turns" to "Hold Y" on the start card: while Y is held, her headset mic feeds her turn and plays in the room. Her voice plays on the scammer's speaker **only during her turns and never while Space is held** (0.2 s late, so her first word isn't clipped). Her mic is cut on takeover.
+- The Mac mic reaches her headset **only while Space is held**, so she never hears her own voice echo back from the room. Pressing Space while she talks ends her turn.
+- Decoy's voice plays on the MacBook speakers only.
+- Pick each side's mic and speaker on the start card, for example external room speakers for the scammer side. Choices are saved in this browser. "Auto" means the MacBook's own mic and speakers for the scammer, and the first non-virtual other device for Margaret. The devices in use are logged in the console.
+- Margaret's turns follow the room's noise floor. If silence still counts as talking, or her first words get cut, move "Margaret start level" on the start card (it applies at once). Her level meter is always on in the bottom bar. Run `node src/audio/vad.check.mjs` after changing `vad.ts`.
+- Bluetooth reaches about 5–10 m through one wall. Test the real rooms at rehearsal.
 
 ## How the voice loop works (`src/audio/`)
 

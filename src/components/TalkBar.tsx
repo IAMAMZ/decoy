@@ -1,4 +1,18 @@
-import { CLONE_TARGET_SECONDS, endCall, startCall, typeTurn, useTalk, type Talker } from '../audio';
+import { useEffect, useState } from 'react';
+import {
+  CLONE_TARGET_SECONDS,
+  endCall,
+  listAudioDevices,
+  setAudio,
+  startCall,
+  herTurnsByVad,
+  twoRooms,
+  typeTurn,
+  useTalk,
+  VAD_DEFAULT,
+  type Role,
+  type Talker,
+} from '../audio';
 
 const NAMES: Record<Talker, string> = { caller: 'Scammer', customer: 'Margaret' };
 
@@ -10,7 +24,7 @@ export function TalkBar() {
     <div className="controls talkbar">
       <span className={`src ${live ? 'src-on' : ''}`}>{live ? 'MIC · live' : `MIC · ${t.status}`}</span>
       <Key k="Space" who="caller" t={t} />
-      <Key k="Y" who="customer" t={t} locked={t.mode === 'takeover'} />
+      <Key k={herTurnsByVad() ? 'Headset' : 'Y'} who="customer" t={t} locked={t.mode === 'takeover'} />
       {live && (
         <form
           className="type-turn"
@@ -47,14 +61,15 @@ export function TalkBar() {
 
 function Key({ k, who, t, locked }: { k: string; who: Talker; t: ReturnType<typeof useTalk>; locked?: boolean }) {
   const on = t.speaker === who;
+  const herMic = twoRooms() && who === 'customer' && t.status === 'live' && !locked; // always on: shows the room is quiet
   return (
     <span className={`ptt ${on ? 'on' : ''} ${locked ? 'locked' : ''}`}>
       <kbd>{k}</kbd>
       {NAMES[who]}
       {locked && <em> · muted, Decoy has the call</em>}
-      {on && (
+      {(on || herMic) && (
         <span className="level" aria-hidden>
-          <span style={{ width: `${Math.round(t.level * 100)}%` }} />
+          <span style={{ width: `${Math.round((herMic ? t.herLevel : t.level) * 100)}%` }} />
         </span>
       )}
     </span>
@@ -97,17 +112,95 @@ export function StartCall() {
             <kbd>Space</kbd> hold to talk as the <strong>scammer</strong>
           </li>
           <li>
-            <kbd>Y</kbd> hold to talk as <strong>Margaret</strong>, until Decoy takes over
+            {herTurnsByVad() ? (
+              <>
+                <strong>Margaret</strong> talks on her headset; her turns start by themselves
+              </>
+            ) : (
+              <>
+                <kbd>Y</kbd> hold to talk as <strong>Margaret</strong>, until Decoy takes over
+              </>
+            )}
           </li>
           <li>
             <kbd>⇧T</kbd> force the takeover &nbsp; <kbd>Esc</kbd> end the call
           </li>
         </ul>
+        <DevicePicker />
         {t.error && <p className="talk-error">{t.error}</p>}
         <button className="btn btn-big" onClick={() => startCall()} disabled={t.status === 'connecting'}>
           {t.status === 'connecting' ? 'Connecting…' : 'Start call'}
         </button>
       </div>
+    </div>
+  );
+}
+
+const ROLES: [Role, MediaDeviceKind, string][] = [
+  ['scammerMic', 'audioinput', 'Scammer mic'],
+  ['scammerOut', 'audiooutput', 'Scammer speaker'],
+  ['margaretMic', 'audioinput', 'Margaret mic'],
+  ['margaretOut', 'audiooutput', 'Margaret speaker'],
+];
+
+function autoLabel(role: Role) {
+  if (role.startsWith('scammer')) return twoRooms() ? 'Auto (MacBook)' : 'System default';
+  if (role === 'margaretMic') return 'Same as scammer (hold Y)';
+  return twoRooms() ? 'Auto' : 'Same as scammer';
+}
+
+/** Which mic and speaker each side uses. Re-reads the list when a device is plugged in. */
+function DevicePicker() {
+  const t = useTalk();
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    const load = () => listAudioDevices().then(setDevices, (e) => setError(e instanceof Error ? e.message : String(e)));
+    load();
+    navigator.mediaDevices.addEventListener('devicechange', load);
+    return () => navigator.mediaDevices.removeEventListener('devicechange', load);
+  }, []);
+  const vad = t.settings.vad ?? VAD_DEFAULT;
+  return (
+    <div className="devices">
+      {ROLES.map(([role, kind, label]) => (
+        <label key={role}>
+          {label}
+          <select value={t.settings[role] ?? ''} onChange={(e) => setAudio({ [role]: e.target.value || undefined })}>
+            <option value="">{autoLabel(role)}</option>
+            {devices
+              .filter((d) => d.kind === kind)
+              .map((d) => (
+                <option key={d.deviceId} value={d.deviceId}>
+                  {d.label || 'Unnamed device'}
+                </option>
+              ))}
+          </select>
+        </label>
+      ))}
+      {twoRooms() && (
+        <label>
+          Margaret's turns
+          <select value={t.settings.herTurns ?? 'vad'} onChange={(e) => setAudio({ herTurns: e.target.value as 'vad' | 'key' })}>
+            <option value="vad">Voice detection (VAD)</option>
+            <option value="key">Hold Y (push-to-talk on this laptop)</option>
+          </select>
+        </label>
+      )}
+      {herTurnsByVad() && (
+        <label>
+          Margaret start level {vad.toFixed(3)}
+          <input
+            type="range"
+            min={0.01}
+            max={0.15}
+            step={0.005}
+            value={vad}
+            onChange={(e) => setAudio({ vad: Number(e.target.value) })}
+          />
+        </label>
+      )}
+      {error && <p className="talk-error">{error}</p>}
     </div>
   );
 }
