@@ -1,3 +1,23 @@
+# Secrets: API keys live in .env, never commit them
+.env
+.env.*
+!.env.example
+
+# Voice recordings (personal audio)
+*.wav
+*.mp3
+*.flac
+
+# Node
+node_modules/
+dist/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
 # IDE
 .vscode/
 .zed/
