@@ -25,7 +25,7 @@ export function PhoneScreen({ state }: { state: CallState }) {
 
   return (
     <div className="phone-wrap">
-      <div className="phone-caption">Margaret's phone</div>
+      <div className="phone-caption">Customer's phone</div>
       <div className={`phone mode-${mode} status-${status}`}>
         <div className="phone-notch" />
         <div className="phone-status">

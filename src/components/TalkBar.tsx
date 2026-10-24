@@ -14,7 +14,7 @@ import {
   type Talker,
 } from '../audio';
 
-const NAMES: Record<Talker, string> = { caller: 'Scammer', customer: 'Margaret' };
+const NAMES: Record<Talker, string> = { caller: 'Scammer', customer: 'Customer' };
 
 /** Bottom bar in mic mode: who holds which key, who's talking, and how loud. */
 export function TalkBar() {
@@ -93,7 +93,7 @@ export function SpeakingTag() {
   const text = t.speaker
     ? `${NAMES[t.speaker]} speaking`
     : t.aiSpeaking
-      ? 'Decoy speaking as Margaret'
+      ? 'Decoy speaking as the customer'
       : null;
   if (!text) return null;
   return <span className={`speaking-tag ${t.speaker ?? 'ai'}`}>{text}</span>;
@@ -114,11 +114,11 @@ export function StartCall() {
           <li>
             {herTurnsByVad() ? (
               <>
-                <strong>Margaret</strong> talks on her headset; her turns start by themselves
+                <strong>The customer</strong> talks on their headset; their turns start by themselves
               </>
             ) : (
               <>
-                <kbd>Y</kbd> hold to talk as <strong>Margaret</strong>, until Decoy takes over
+                <kbd>Y</kbd> hold to talk as <strong>the customer</strong>, until Decoy takes over
               </>
             )}
           </li>
@@ -139,8 +139,8 @@ export function StartCall() {
 const ROLES: [Role, MediaDeviceKind, string][] = [
   ['scammerMic', 'audioinput', 'Scammer mic'],
   ['scammerOut', 'audiooutput', 'Scammer speaker'],
-  ['margaretMic', 'audioinput', 'Margaret mic'],
-  ['margaretOut', 'audiooutput', 'Margaret speaker'],
+  ['margaretMic', 'audioinput', 'Customer mic'],
+  ['margaretOut', 'audiooutput', 'Customer speaker'],
 ];
 
 function autoLabel(role: Role) {
@@ -180,7 +180,7 @@ function DevicePicker() {
       ))}
       {twoRooms() && (
         <label>
-          Margaret's turns
+          Customer's turns
           <select value={t.settings.herTurns ?? 'vad'} onChange={(e) => setAudio({ herTurns: e.target.value as 'vad' | 'key' })}>
             <option value="vad">Voice detection (VAD)</option>
             <option value="key">Hold Y (push-to-talk on this laptop)</option>
@@ -189,7 +189,7 @@ function DevicePicker() {
       )}
       {herTurnsByVad() && (
         <label>
-          Margaret start level {vad.toFixed(3)}
+          Customer start level {vad.toFixed(3)}
           <input
             type="range"
             min={0.01}

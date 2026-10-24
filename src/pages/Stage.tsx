@@ -15,7 +15,7 @@ import { MIC } from '../events/useCallEvents';
 // the real checks are visible; without it, transcript and tool calls fill the space.
 const MODE_TEXT = {
   monitoring: 'Listening',
-  protecting: 'Protecting Margaret',
+  protecting: 'Protecting the customer',
   takeover: 'Decoy has the call',
 };
 

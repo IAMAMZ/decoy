@@ -49,10 +49,14 @@ const ANALYZE_TOOL = {
   },
 };
 
-const INSTRUCTIONS = `You are a bank fraud analyst silently monitoring a phone call to Margaret, 78, one of the bank's customers.
-Lines are marked [CALLER], [MARGARET] (the real customer) or [MARGARET-AI] (our assistant speaking as her after takeover).
+const INSTRUCTIONS = `You are a bank fraud analyst silently monitoring a phone call to one of the bank's customers.
+Lines are marked [CALLER], [CUSTOMER] (the real customer) or [CUSTOMER-AI] (our assistant speaking as them after takeover).
 After each [CALLER] line, call analyze_turn with your assessment of the whole call so far. Listen for urgency, pressure, secrecy, bank impersonation and requests to move money.
-Scores rise gradually as evidence builds; one mild phrase is not enough for 0.8. A friendly or ordinary call stays low.
+Score decisively; missing a scam costs far more than a false alarm. A friendly or ordinary call stays low, but once the pattern is clear, say so:
+- Caller claims to be the bank or police AND asks to move money, share a card number, PIN, password or one-time code: 0.9 or higher.
+- A "safe account", gift cards or remote-access software: 0.9 or higher, even on its own.
+- Bank impersonation plus urgency or secrecy, without a request yet: 0.6-0.8.
+Never lower the score because the caller sounds polite or professional.
 Only use the flag "safe_account" when the caller asks to move money to a different or "safe" account.`;
 
 export class Brain {
@@ -110,7 +114,7 @@ export class Brain {
   }
 
   /** Add a line to the brain's view of the call. For caller lines, resolves with its analysis. */
-  hear(tag: 'CALLER' | 'MARGARET' | 'MARGARET-AI', text: string): Promise<Analysis | null> {
+  hear(tag: 'CALLER' | 'CUSTOMER' | 'CUSTOMER-AI', text: string): Promise<Analysis | null> {
     const run = async () => {
       if (this.ready) await this.ready.catch(() => {});
       this.send({

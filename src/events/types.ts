@@ -1,7 +1,7 @@
 // Dashboard events, exactly as in the brief's Shared contract (WebSocket /ws/events).
 // Optional fields marked "extension" are additions the contract doesn't list yet.
 
-// extension: 'customer' is the real Margaret (push-to-talk Y) before Decoy takes over.
+// extension: 'customer' is the real customer (push-to-talk Y) before Decoy takes over.
 export type Speaker = 'caller' | 'customer' | 'ai';
 export type Mode = 'monitoring' | 'protecting' | 'takeover';
 export type IntelKind = 'mule_account' | 'callback_number' | 'url' | 'tactic';
