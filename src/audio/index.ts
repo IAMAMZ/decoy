@@ -118,6 +118,7 @@ const itemSpeaker = new Map<string, Committed>();
 let sample: { pcm: ArrayBuffer[]; text: string[] } = { pcm: [], text: [] };
 let clonedVoice: string | null = null;
 let cloning = false;
+let cloneWaiters: (() => void)[] = []; // voiceReady() callers
 let answerAfterClone = false; // a caller turn arrived mid-clone; answer once it's done
 let responding = false;
 let respondedAt = 0;
@@ -197,7 +198,7 @@ export async function startCall(): Promise<void> {
           sample.pcm.push(...t.pcm);
           sample.text.push(text.trim());
           set({ clone: { seconds: pcmSeconds(sample.pcm), status: 'collecting' } });
-          maybeClone(state.mode === 'takeover' ? CLONE_MIN_SECONDS : CLONE_SECONDS);
+          maybeClone(state.mode === 'takeover' || cloneWaiters.length ? CLONE_MIN_SECONDS : CLONE_SECONDS);
         }
       },
       onAudio: (b64) => {
@@ -291,12 +292,21 @@ function teardown() {
   lastTurn = null;
   responding = false;
   answerAfterClone = false;
+  cloneWaiters.splice(0).forEach((w) => w());
   committedQueue.length = 0;
   itemSpeaker.clear();
   sample = { pcm: [], text: [] };
   clonedVoice = null;
   cloning = false;
   set({ clone: NO_CLONE });
+}
+
+/** Resolves once the customer's voice is cloned or the clone failed. Clones now from what there is (3 s minimum). */
+export function voiceReady(): Promise<void> {
+  if (clonedVoice || state.status !== 'live') return Promise.resolve();
+  const ready = new Promise<void>((resolve) => cloneWaiters.push(resolve));
+  maybeClone(CLONE_MIN_SECONDS);
+  return ready;
 }
 
 /** Clone the customer's voice once enough of their speech is in; at takeover Decoy switches to it. */
@@ -328,6 +338,7 @@ async function maybeClone(minSeconds: number) {
       // Clone done or failed: answer the caller now (a failed clone falls back to the default voice).
       if (answerAfterClone && state.mode === 'takeover' && lastTurn === 'caller' && !turn) answer();
       answerAfterClone = false;
+      cloneWaiters.splice(0).forEach((w) => w());
     }
   }
 }
