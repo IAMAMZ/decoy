@@ -61,6 +61,7 @@ export function describeResult(tool: string, args: Record<string, any>, r: any):
     case 'freeze_transaction':
       return { text: `${money(r.amount)} transfer ${r.status}`, tone: 'ok' };
     case 'notify_family':
+      if (r.error) return { text: r.summary, tone: 'neutral' };
       return { text: `${r.via ?? 'Message'} ${r.delivery} to ${args.contact}`, tone: 'ok' };
     case 'take_over_call':
       return { text: `${args.persona} persona is on the line · customer muted`, tone: 'ok' };
