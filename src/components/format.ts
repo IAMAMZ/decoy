@@ -37,6 +37,7 @@ export const TOOL_LABEL: Record<string, string> = {
   web_search: 'Search the web',
   open_page: 'Open web page',
   check_domain: 'Check domain registration',
+  clone_voice: "Clone the customer's voice",
 };
 
 // Tool calls that show up in the agent browser panel.
@@ -89,6 +90,9 @@ export function describeResult(tool: string, args: Record<string, any>, r: any):
       const parts = [`score ${Number(r.score).toFixed(2)}`, flags || 'no flags', r.evidence, found && `found ${found}`];
       return { text: parts.filter(Boolean).join(' · '), tone: r.score >= 0.6 ? 'danger' : 'neutral' };
     }
+    case 'clone_voice':
+      if (r.error) return { text: r.summary, tone: 'neutral' };
+      return { text: `Voice ready from ${args.seconds}s of speech · Decoy speaks with it at takeover`, tone: 'ok' };
     case 'web_search':
     case 'open_page':
     case 'check_domain':

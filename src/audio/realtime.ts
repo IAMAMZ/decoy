@@ -65,7 +65,8 @@ export class Realtime {
             format: { type: 'audio/pcm', rate: 24000 },
             turn_detection: null,
             transcription: { model: 'higgs-stt-3.1', language: 'en' },
-            noise_reduction: { type: 'near_field' },
+            // No server noise_reduction: near_field dropped words from clean speech in every test.
+            // getUserMedia's noiseSuppression already cleans the mic.
           },
           output: { format: { type: 'audio/pcm', rate: 24000 }, voice },
         },
@@ -76,6 +77,19 @@ export class Realtime {
 
   setInstructions(instructions: string) {
     this.send({ type: 'session.update', session: { model: 'higgs-realtime', instructions } });
+  }
+
+  /** Switch the output voice mid-session. Retries because Boson's voice check sometimes hits a 429. */
+  async setVoice(voice: string) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      this.send({ type: 'session.update', session: { model: 'higgs-realtime', audio: { output: { voice } } } });
+      try {
+        // Only the update that echoes this voice counts; a takeover's instructions update also says session.updated.
+        return await this.waitFor('session.updated', 5000, (ev) => ev.session?.audio?.output?.voice === voice);
+      } catch {
+        await new Promise((ok) => setTimeout(ok, 1500));
+      }
+    }
   }
 
   /** Text marker before a turn's audio so the model knows who is speaking. Returns its item id. */
@@ -124,14 +138,14 @@ export class Realtime {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(ev));
   }
 
-  private waitFor(type: string, ms: number): Promise<void> {
+  private waitFor(type: string, ms: number, match: (ev: any) => boolean = () => true): Promise<void> {
     return new Promise((resolve, reject) => {
       const t = setTimeout(() => reject(new Error(`No ${type} from Higgs Realtime`)), ms);
       this.waiting = (got, ev) => {
         if (got === 'error') {
           clearTimeout(t);
           reject(new Error(ev.error?.message ?? 'Realtime error'));
-        } else if (got === type) {
+        } else if (got === type && match(ev)) {
           clearTimeout(t);
           this.waiting = null;
           resolve();
