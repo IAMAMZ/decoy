@@ -69,19 +69,26 @@ export function useBrowserBridge(tools: ToolCall[], callId: string | null, injec
     let closed = false;
     let retry = 0;
     const connect = () => {
+      if (closed) return;
       const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
       const sock = new WebSocket(`${proto}://${window.location.host}/browser/ws`);
       ws.current = sock;
       sock.onopen = () => {
+        if (closed) {
+          sock.close();
+          return;
+        }
         bridge.connected = true;
         setConnected(true);
       };
       sock.onclose = () => {
+        if (closed) return;
         bridge.connected = false;
         setConnected(false);
-        if (!closed) retry = window.setTimeout(connect, 2000);
+        retry = window.setTimeout(connect, 2000);
       };
       sock.onmessage = (m) => {
+        if (closed) return;
         const msg = JSON.parse(m.data);
         const prev = lastId.current;
         lastId.current = msg.id;
@@ -110,12 +117,16 @@ export function useBrowserBridge(tools: ToolCall[], callId: string | null, injec
         }
       };
     };
-    connect();
+    retry = window.setTimeout(connect, 0);
     return () => {
       closed = true;
       clearTimeout(retry);
       bridge.connected = false;
-      ws.current?.close();
+      const sock = ws.current;
+      ws.current = null;
+      if (sock && sock.readyState === WebSocket.OPEN) {
+        sock.close();
+      }
     };
   }, [inject]);
 

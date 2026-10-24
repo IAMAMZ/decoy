@@ -12,31 +12,25 @@ export function SummaryCard({ summary }: { summary: SummaryData }) {
   }, []);
   if (!open) return null;
 
+  const idMatch = summary.report.match(/\bReport\s+(FR-[\w-]+)\s+filed\.?$/i);
+  const reportId = idMatch?.[1] ?? null;
+  const narrative = idMatch ? summary.report.slice(0, idMatch.index).trim() : summary.report;
+
   return (
     <div className="overlay" onClick={() => setOpen(false)}>
       <article className="summary" onClick={(e) => e.stopPropagation()}>
         <header>
-          <Logo size={20} />
-          <span>Call closed. Report filed.</span>
+          <Logo size={22} />
+          <span>Call closed · Report filed</span>
+          {reportId && <code className="report-id">{reportId}</code>}
           <button className="link" onClick={() => setOpen(false)}>
-            Close
+            Close (Esc)
           </button>
         </header>
-        <dl className="stats">
-          <div>
-            <dd>{summary.minutes_wasted.toFixed(1)}</dd>
-            <dt>scammer minutes wasted</dt>
-          </div>
-          <div>
-            <dd>${summary.dollars_protected.toLocaleString('en-US')}</dd>
-            <dt>kept in the customer's account</dt>
-          </div>
-          <div>
-            <dd>{summary.intel_count}</dd>
-            <dt>intel records for the fraud team</dt>
-          </div>
-        </dl>
-        <p className="report">{summary.report}</p>
+        <div className="report-wrap">
+          <div className="report-label">Incident summary</div>
+          <p className="report">{narrative || summary.report}</p>
+        </div>
       </article>
     </div>
   );
