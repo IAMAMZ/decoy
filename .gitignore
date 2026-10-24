@@ -1,5 +1,21 @@
+# IDE
+.vscode/
+.zed/
+.idea/
+*.swp
+
+# Agents
 AGENTS.md
+AGENTS.override.md
 CLAUDE.md
+CLAUDE.local.md
 .agents/
 .claude/
 .codex/
+paseo.json
+
+# OS
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
