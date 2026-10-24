@@ -320,7 +320,8 @@ async def start() -> None:
     page = await ctx.new_page()
 
     def on_nav(frame) -> None:
-        if frame == page.main_frame:
+        # Chrome's "site can't be reached" page is chrome-error://…; keep the address that was tried.
+        if frame == page.main_frame and not frame.url.startswith("chrome-error://"):
             last["address"] = shown(frame.url)
             broadcast({"type": "address", "text": shown(frame.url), "typing": False})
 
