@@ -29,6 +29,12 @@ const CLONE_WAIT_MS = 30000; // takeover waits this long for the voice clone, th
 const MAX_RISE = 0.3; // per turn, so the meter climbs instead of jumping
 const MAX_FALL = 0.1;
 const TAKEOVER_LINE = "This call is a scam. Your money is safe. You can hang up now; I'll handle it from here.";
+// What the brain may still put in claimed_org although no organisation was named: a vague "the bank"
+// or a person. Nothing to look up for those, so no number or policy check runs.
+const NOT_AN_ORG =
+  /^(?:(?:the|a|an|your|my|his|her)\s+)?(?:bank|bank's fraud (?:team|department)|fraud (?:team|department)|police|government|company|friend|family|relative|grandson|granddaughter|son|daughter|nephew|niece|cousin|brother|sister|mother|father|mom|dad|unknown|none|n\/a)s?$/i;
+const namedOrg = (org: string) => !!org.trim() && !NOT_AN_ORG.test(org.trim());
+
 const TACTICS: Record<string, string> = {
   safe_account: 'Safe-account transfer',
   secrecy: 'secrecy demand',
@@ -48,6 +54,7 @@ type Run = {
   intel: Set<string>;
   investigator: Promise<Investigator> | null; // opened on the first real-browser check
   numberCheck: Promise<Record<string, unknown>> | null; // the caller-number investigation, run once per call
+  request: string; // the caller's line that asked for something a real organisation never asks
   policyChecked: boolean;
   protect: Promise<void> | null;
   takeoverStarted: boolean;
@@ -110,6 +117,7 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
       intel: new Set(),
       investigator: null,
       numberCheck: null,
+      request: '',
       policyChecked: false,
       protect: null,
       takeoverStarted: false,
@@ -169,7 +177,7 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
 
   function onAnalysis(r: Run, a: Analysis | null, backup: Found[], words: string[], line: string) {
     if (r.ended || r.callId !== run.current?.callId) return;
-    if (a?.claimed_org?.trim()) r.claimedOrg = a.claimed_org.trim();
+    if (a?.claimed_org && namedOrg(a.claimed_org)) r.claimedOrg = a.claimed_org.trim();
     // The caller just named who they claim to be: check their number right away, in the background,
     // instead of waiting for the score to reach protecting. protect() reuses this result.
     if (bridge.connected && !r.numberCheck && r.claimedOrg) r.numberCheck = checkCallerNumber(r);
@@ -203,13 +211,16 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
     }
 
     // The caller asked for something legitimate organisations don't: find their own rule saying so.
-    if (bridge.connected && !r.policyChecked && turnFlags.some((f) => POLICY_FLAGS.includes(f))) {
+    // Only for a named organisation (a "friend" asking for gift cards has no rulebook to check). The
+    // request and the name can come in either order, so remember the request until both are known.
+    if (!r.request && turnFlags.some((f) => POLICY_FLAGS.includes(f))) r.request = line;
+    if (bridge.connected && !r.policyChecked && r.request && r.claimedOrg) {
       r.policyChecked = true;
-      const org = r.claimedOrg || 'the organisation the caller claims to represent';
+      const org = r.claimedOrg;
       investigate(
         r,
         'request',
-        `The caller, who says they are from "${r.claimedOrg || 'a bank'}", told the customer: "${line}". Find ${org}'s ` +
+        `The caller, who says they are from "${org}", told the customer: "${r.request}". Find ${org}'s ` +
           `own official guidance on whether it would ever ask a customer to do this, highlight the rule with ` +
           `find_on_page, and report contradicted if it says it never asks this.`,
       );

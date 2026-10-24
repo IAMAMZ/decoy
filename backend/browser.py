@@ -38,15 +38,42 @@ COOKIE_BANNERS = [
     ".qc-cmp2-container",  # Quantcast
     "#didomi-host",  # Didomi
 ]
+# Sites with their own banner (HSBC's is a full-screen dialog) aren't in that list, so also sweep the page
+# for overlays about cookies: fixed or sticky elements, or dialogs, whose short text mentions cookies or
+# consent and that offer buttons. Hidden the same way, and the page's scroll lock is lifted.
 HIDE_COOKIE_BANNERS = """(() => {
   const add = () => {
     const style = document.createElement('style');
     style.textContent = `%s { display: none !important; }`;
     (document.head || document.documentElement).appendChild(style);
   };
+  const ABOUT_COOKIES = /cookie|consent|tracking technolog/i;
+  const sweep = () => {
+    if (!document.body) return;
+    let hid = false;
+    for (const el of document.body.querySelectorAll('div, section, aside, dialog, form, footer')) {
+      const dialog = el.getAttribute('role') === 'dialog' || el.getAttribute('aria-modal') === 'true' || el.tagName === 'DIALOG';
+      const pos = getComputedStyle(el).position;
+      if (!dialog && pos !== 'fixed' && pos !== 'sticky') continue;
+      const text = el.innerText || '';
+      if (!text || text.length > 4000 || !ABOUT_COOKIES.test(text) || !el.querySelector('button, [role=button]')) continue;
+      if (el.querySelector('nav')) continue; // a fixed header with a "Cookie policy" link, not a banner
+      el.style.setProperty('display', 'none', 'important');
+      hid = true;
+    }
+    if (hid) for (const el of [document.documentElement, document.body]) el.style.setProperty('overflow', 'auto', 'important');
+  };
+  let queued = false;
+  const later = () => { if (!queued) { queued = true; setTimeout(() => { queued = false; sweep(); }, 300); } };
+  const start = () => {
+    sweep();
+    new MutationObserver(later).observe(document.body, {childList: true, subtree: true});
+  };
   // Init scripts can run before the page has an <html> element; wait for it then.
   if (document.documentElement) add();
   else document.addEventListener('DOMContentLoaded', add, {once: true});
+  if (document.body) start();
+  else document.addEventListener('DOMContentLoaded', start, {once: true});
 })();""" % ", ".join(COOKIE_BANNERS)
 
 clients: dict[WebSocket, asyncio.Queue] = {}  # each client has its own outbox, so none can stall the rest
