@@ -3,16 +3,28 @@
 // Before takeover Decoy only listens (both sides are transcribed for the dashboard).
 // After takeover, Y is locked and Decoy answers the scammer out loud as Margaret.
 // Pressing Space while Decoy talks interrupts it.
+//
+// Two rooms (?headset, or a Margaret mic picked on the start card): Margaret is a second presenter in another room on a Bluetooth headset paired to
+// this laptop. Her turns are split by loudness (no Y), and the room hears her only during a turn,
+// never while Space is held. The scammer's mic reaches her headset only while Space is held.
+// After takeover her mic is cut. Each side's mic and speaker is picked on the start card (saved
+// in localStorage); unset ones fall back to the MacBook's own and the first other device.
 import { useSyncExternalStore } from 'react';
 import type { CallEvent, Mode } from '../events/types';
 import { Player } from './player';
 import workletUrl from './pcm-worklet.js?url';
 import { Realtime } from './realtime';
 import { createVoice, pcmSeconds } from './clone';
+import { Vad } from './vad';
 
 export type Talker = 'caller' | 'customer';
 
+export type Role = 'scammerMic' | 'scammerOut' | 'margaretMic' | 'margaretOut';
+export type AudioSettings = Partial<Record<Role, string>> & { vad?: number };
+
 export type TalkState = {
+  settings: AudioSettings; // chosen device ids, and Margaret's start level
+  herLevel: number; // headset mic loudness 0..1, always on in ?headset
   status: 'idle' | 'connecting' | 'live' | 'error';
   speaker: Talker | null;
   aiSpeaking: boolean;
@@ -32,6 +44,13 @@ const SILENT_ERROR = 'The mic heard nothing on that turn: check the input device
 // Boson recommends 5-30 s of clean speech to clone a voice; it accepts 3 s minimum.
 const CLONE_SECONDS = 8;
 const CLONE_MIN_SECONDS = 3;
+
+const params = new URLSearchParams(window.location.search);
+const HEADSET = params.has('headset');
+export const VAD_DEFAULT = 0.04; // headset mic RMS that starts Margaret's turn
+const SAVED = 'decoy.audio';
+const PREROLL = 2; // chunks kept from before her turn starts, so its first word isn't clipped
+const MIC_OPTS = { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true };
 
 const LABEL: Record<Talker, string> = {
   caller: '[Next audio: the CALLER]',
@@ -55,7 +74,10 @@ const NO_CLONE: TalkState['clone'] = { seconds: 0, status: 'collecting' };
 
 // ---------- tiny store so React can read the talk state ----------
 
-let state: TalkState = { status: 'idle', speaker: null, aiSpeaking: false, level: 0, mode: 'monitoring', error: null, clone: NO_CLONE };
+let state: TalkState = {
+  settings: JSON.parse(localStorage.getItem(SAVED) ?? '{}'),
+  herLevel: 0,
+  status: 'idle', speaker: null, aiSpeaking: false, level: 0, mode: 'monitoring', error: null, clone: NO_CLONE };
 const listeners = new Set<() => void>();
 function set(patch: Partial<TalkState>) {
   state = { ...state, ...patch };
@@ -96,6 +118,34 @@ let responding = false;
 let respondedAt = 0;
 let lastTurn: Talker | null = null; // who spoke last, so takeover knows whether to answer
 let gotFirstAudio = false;
+// ?headset only
+let headCtx: AudioContext | null = null;
+let headStream: MediaStream | null = null;
+let toHeadset: GainNode | null = null; // scammer mic -> her ear, open while Space is held
+let toSpeakers: GainNode | null = null; // her mic -> the room, open during her turns
+let preroll: ArrayBuffer[] = [];
+/** Margaret on her own mic and speaker: ?headset, or a Margaret mic picked on the start card. */
+export function twoRooms(): boolean {
+  return HEADSET || !!state.settings.margaretMic;
+}
+
+const vad = new Vad(state.settings.vad ?? VAD_DEFAULT);
+
+/** Pick a device for one side, or Margaret's start level. Applies to the next call; the level applies now. */
+export function setAudio(patch: AudioSettings) {
+  const settings = { ...state.settings, ...patch };
+  localStorage.setItem(SAVED, JSON.stringify(settings));
+  vad.on = settings.vad ?? VAD_DEFAULT;
+  set({ settings });
+}
+
+/** Every real mic and speaker. Asks for mic permission first, because labels are blank without it. */
+export async function listAudioDevices(): Promise<MediaDeviceInfo[]> {
+  (await navigator.mediaDevices.getUserMedia({ audio: true })).getTracks().forEach((t) => t.stop());
+  const all = await navigator.mediaDevices.enumerateDevices();
+  // Chrome lists "default" and "communications" again as aliases of real devices.
+  return all.filter((d) => d.kind !== 'videoinput' && d.deviceId !== 'default' && d.deviceId !== 'communications');
+}
 
 function emit(type: CallEvent['type'], data: object, ts = Date.now()) {
   emitEvent({ type, call_id: callId, ts, data } as CallEvent);
@@ -105,11 +155,14 @@ export async function startCall(): Promise<void> {
   if (state.status === 'live' || state.status === 'connecting') return;
   set({ status: 'connecting', error: null, mode: 'monitoring', speaker: null, aiSpeaking: false });
   try {
-    ctx = new AudioContext({ sampleRate: 24000 });
+    const dev = await pickDevices();
+    // AudioContext sinkId is Chrome 110+ and not in TS's DOM types yet.
+    ctx = new AudioContext({ sampleRate: 24000, ...(dev.scammerOut && { sinkId: dev.scammerOut }) } as AudioContextOptions);
     stream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      audio: dev.scammerMic ? { ...MIC_OPTS, deviceId: { exact: dev.scammerMic } } : MIC_OPTS,
     });
     await ctx.audioWorklet.addModule(workletUrl);
+    if (twoRooms()) await connectHeadset(dev as Devices);
     const capture = new AudioWorkletNode(ctx, 'pcm-capture');
     const silent = ctx.createGain();
     silent.gain.value = 0; // keeps the worklet running without playing the mic back
@@ -220,8 +273,13 @@ function teardown() {
   player?.stop();
   rt?.close();
   stream?.getTracks().forEach((t) => t.stop());
+  headStream?.getTracks().forEach((t) => t.stop());
   ctx?.close();
+  headCtx?.close();
   ctx = stream = rt = player = null;
+  headCtx = headStream = toHeadset = toSpeakers = null;
+  preroll = [];
+  vad.reset();
   turn = null;
   lastTurn = null;
   responding = false;
@@ -266,13 +324,17 @@ async function maybeClone(minSeconds: number) {
 function keyToTalker(e: KeyboardEvent): Talker | null {
   if (e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return null;
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return null;
-  return e.code === 'Space' ? 'caller' : e.code === 'KeyY' ? 'customer' : null;
+  return e.code === 'Space' ? 'caller' : e.code === 'KeyY' && !twoRooms() ? 'customer' : null;
 }
 
 function onKeyDown(e: KeyboardEvent) {
   const who = keyToTalker(e);
   if (!who) return;
   e.preventDefault(); // Space would otherwise scroll or press buttons
+  if (!e.repeat && turn?.speaker === 'customer' && twoRooms()) {
+    finishTurn(); // the scammer talks over Margaret: close her turn so his can start
+    vad.reset();
+  }
   if (e.repeat || turn) return; // holding a key repeats keydown; one turn at a time
   if (who === 'customer' && state.mode === 'takeover') return; // Margaret is muted after takeover
   if (state.aiSpeaking || responding) {
@@ -283,6 +345,7 @@ function onKeyDown(e: KeyboardEvent) {
   }
   turn = { speaker: who, pressedAt: performance.now(), chunks: 0, labelId: null, pcm: [], peak: 0 };
   set({ speaker: who, level: 0 });
+  if (who === 'caller') setEar(true);
 }
 
 function onKeyUp(e: KeyboardEvent) {
@@ -293,11 +356,12 @@ function onKeyUp(e: KeyboardEvent) {
 }
 
 function onBlur() {
-  if (turn) finishTurn(); // window lost focus mid-turn: keyup will never arrive
+  if (turn?.speaker === 'caller' || (turn && !twoRooms())) finishTurn(); // window lost focus mid-turn: keyup will never arrive
 }
 
 function onMicChunk(pcm: ArrayBuffer, level: number) {
   if (!turn || !rt) return;
+  if (twoRooms() && turn.speaker !== 'caller') return; // her turns come from the headset mic
   set({ level: Math.min(1, level * 6) });
   if (performance.now() - turn.pressedAt < KEY_CLICK_MS) return;
   turn.peak = Math.max(turn.peak, level);
@@ -312,6 +376,8 @@ function cancelTurn() {
   if (turn?.chunks) rt?.clear();
   turn = null;
   set({ speaker: null, level: 0 });
+  setEar(false);
+  setRoom(false);
 }
 
 function finishTurn() {
@@ -325,6 +391,8 @@ function finishTurn() {
   if (state.error === SILENT_ERROR) set({ error: null });
   turn = null;
   set({ speaker: null, level: 0 });
+  setEar(false);
+  setRoom(false);
 
   committedQueue.push({ speaker: t.speaker, ts: Date.now(), pcm: t.pcm });
   rt.commit();
@@ -334,5 +402,103 @@ function finishTurn() {
     gotFirstAudio = false;
     respondedAt = performance.now();
     rt.respond();
+  }
+}
+
+// ---------- ?headset ----------
+
+type Devices = Record<Role, string>;
+
+/** The chosen devices that are still plugged in; in ?headset, guesses the rest. Unset = system default. */
+async function pickDevices(): Promise<Partial<Devices>> {
+  const all = await listAudioDevices();
+  const chosen = (r: Role) => all.find((d) => d.deviceId === state.settings[r]);
+  const laptop = (d: MediaDeviceInfo) => /macbook|built-in/i.test(d.label);
+  const headset = (d: MediaDeviceInfo) =>
+    d.deviceId !== 'default' &&
+    !laptop(d) &&
+    !/iphone|ipad|zoom|teams|blackhole|virtual|aggregate|display|monitor/i.test(d.label);
+  const find = (kind: MediaDeviceKind, ok: (d: MediaDeviceInfo) => boolean) =>
+    twoRooms() ? all.find((d) => d.kind === kind && ok(d)) : undefined;
+  const picked = {
+    scammerMic: chosen('scammerMic') ?? find('audioinput', laptop),
+    scammerOut: chosen('scammerOut') ?? find('audiooutput', laptop),
+    ...(twoRooms() && {
+      margaretMic: chosen('margaretMic') ?? find('audioinput', headset),
+      margaretOut: chosen('margaretOut') ?? find('audiooutput', headset),
+    }),
+  };
+  if (!twoRooms()) return { scammerMic: picked.scammerMic?.deviceId, scammerOut: picked.scammerOut?.deviceId };
+  const missing = Object.entries(picked).filter(([, d]) => !d).map(([k]) => k);
+  if (missing.length)
+    throw new Error(`Headset mode: no ${missing.join(', ')}. Audio devices: ${all.map((d) => d.label).join(', ')}`);
+  console.info('[audio] using', Object.fromEntries(Object.entries(picked).map(([k, d]) => [k, d!.label])));
+  return Object.fromEntries(Object.entries(picked).map(([k, d]) => [k, d!.deviceId])) as Devices;
+}
+
+async function connectHeadset(dev: Devices) {
+  if (!ctx || !stream) return;
+  // No auto gain: in a quiet room it turns hiss up until it sounds like talking.
+  headStream = await navigator.mediaDevices.getUserMedia({
+    audio: { ...MIC_OPTS, autoGainControl: false, deviceId: { exact: dev.margaretMic } },
+  });
+  const her = ctx.createMediaStreamSource(headStream);
+  toSpeakers = ctx.createGain();
+  toSpeakers.gain.value = 0;
+  // Delayed so the room also hears the words just before the gate opened (the turn's pre-roll).
+  const delay = ctx.createDelay(1);
+  delay.delayTime.value = PREROLL / 10;
+  her.connect(delay).connect(toSpeakers).connect(ctx.destination);
+  const capture = new AudioWorkletNode(ctx, 'pcm-capture');
+  const silent = ctx.createGain();
+  silent.gain.value = 0;
+  her.connect(capture).connect(silent).connect(ctx.destination);
+  capture.port.onmessage = (e) => onHeadsetChunk(e.data.pcm, e.data.level);
+
+  headCtx = new AudioContext({ sinkId: dev.margaretOut } as AudioContextOptions);
+  toHeadset = headCtx.createGain();
+  toHeadset.gain.value = 0;
+  headCtx.createMediaStreamSource(stream).connect(toHeadset).connect(headCtx.destination);
+}
+
+function setEar(open: boolean) {
+  if (toHeadset) toHeadset.gain.value = open ? 1 : 0;
+}
+
+function setRoom(open: boolean) {
+  if (ctx && toSpeakers) toSpeakers.gain.setTargetAtTime(open ? 1 : 0, ctx.currentTime, 0.02); // a 20 ms fade, no click
+}
+
+function onHeadsetChunk(pcm: ArrayBuffer, level: number) {
+  if (!rt || state.mode === 'takeover') return;
+  set({ herLevel: Math.min(1, level * 6) });
+  // shortcut: one turn at a time, so her words while the scammer holds Space are dropped; upgrade if overlapping speech matters.
+  if (turn && turn.speaker !== 'customer') {
+    preroll = [];
+    vad.reset();
+    return;
+  }
+  const step = vad.push(level);
+  if (!step) {
+    preroll = [...preroll, pcm].slice(-PREROLL);
+    return;
+  }
+  if (step === 'start') {
+    turn = { speaker: 'customer', pressedAt: performance.now(), chunks: 0, labelId: rt.label(LABEL.customer), pcm: [], peak: 0 };
+    for (const p of preroll) rt.append(p);
+    turn.pcm.push(...preroll); // her speech also feeds the voice clone
+    turn.chunks = preroll.length;
+    preroll = [];
+    set({ speaker: 'customer' });
+    setRoom(true);
+  }
+  if (!turn) return vad.reset(); // her turn was closed elsewhere (takeover)
+  rt.append(pcm);
+  turn.pcm.push(pcm);
+  turn.peak = Math.max(turn.peak, level);
+  turn.chunks++;
+  if (step === 'end') {
+    if (vad.voiced < MIN_TURN_CHUNKS) cancelTurn();
+    else finishTurn();
   }
 }

@@ -615,6 +615,9 @@ kbd {
 .start-card ul { list-style: none; margin: 0 0 22px; padding: 0; display: grid; gap: 10px; color: var(--text-2); }
 .start-card kbd { margin-right: 8px; }
 .start-card .talk-error { margin: 0 0 16px; }
+.devices { display: grid; gap: 10px; margin: 0 0 22px; }
+.devices label { display: grid; gap: 4px; font: 12px var(--sans); color: var(--text-2); }
+.devices select { font: 13px var(--sans); color: var(--text); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; }
 .btn:disabled { opacity: 0.5; cursor: default; }
 .type-turn input {
   width: 240px;
