@@ -71,7 +71,7 @@ export function describeResult(tool: string, args: Record<string, any>, r: any):
     case 'web_search':
     case 'open_page':
     case 'check_domain':
-      return { text: r.summary ?? 'Done', tone: 'danger' };
+      return { text: r.summary ?? 'Done', tone: r.error ? 'neutral' : 'danger' };
     default:
       return { text: JSON.stringify(r), tone: 'neutral' };
   }

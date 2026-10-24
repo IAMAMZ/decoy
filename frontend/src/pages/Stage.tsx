@@ -3,6 +3,8 @@ import { Wordmark } from '../components/Brand';
 import { describeResult, fmtClock, INTEL_LABEL, TOOL_LABEL, useNow, useTween } from '../components/format';
 import { PhoneScreen } from '../components/PhoneScreen';
 import { SummaryCard } from '../components/SummaryCard';
+import { LiveScreen } from '../components/LiveScreen';
+import type { Bridge } from '../events/browserBridge';
 import type { CallState } from '../events/reducer';
 
 // The demo layout for judges: the phone, what the agent is doing, and three plain facts.
@@ -13,7 +15,7 @@ const MODE_TEXT = {
   takeover: 'Decoy has the call',
 };
 
-export function Stage({ state }: { state: CallState }) {
+export function Stage({ state, browser }: { state: CallState; browser: Bridge }) {
   const now = useNow(60);
   const score = useTween(state.score);
   const elapsed = state.startedAt ? (state.endedAt ?? now) - state.startedAt : 0;
@@ -29,7 +31,7 @@ export function Stage({ state }: { state: CallState }) {
           <span className="elapsed">{fmtClock(elapsed)}</span>
         </header>
         <div className="stage-body">
-          <AgentScreen tools={state.tools} now={now} />
+          {browser.connected ? <LiveScreen bridge={browser} /> : <AgentScreen tools={state.tools} now={now} />}
           <aside className="rail">
             <div className="rail-block">
               <h2>Scam likelihood</h2>

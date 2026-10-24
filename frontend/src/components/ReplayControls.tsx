@@ -1,8 +1,19 @@
 import type { Replay } from '../events/useCallEvents';
 
-export function ReplayControls({ live, connected, replay }: { live: boolean; connected: boolean; replay: Replay }) {
+export function ReplayControls({
+  live,
+  connected,
+  replay,
+  realBrowser,
+}: {
+  live: boolean;
+  connected: boolean;
+  replay: Replay;
+  realBrowser: boolean;
+}) {
   return (
     <div className="controls">
+      <span className={`src ${realBrowser ? 'src-on' : ''}`}>{realBrowser ? 'browser: real' : 'browser: scripted'}</span>
       {live ? (
         <span className={`src ${connected ? 'src-on' : ''}`}>{connected ? 'LIVE · /ws/events' : 'LIVE · connecting…'}</span>
       ) : (

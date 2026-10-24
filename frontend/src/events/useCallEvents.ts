@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { BROWSE_TOOLS } from '../components/format';
 import script from '../data/fake_events.json';
+import { bridge } from './browserBridge';
 import { initialState, reduce, type Action } from './reducer';
 import type { CallEvent } from './types';
 
@@ -85,7 +87,10 @@ function useReplay(dispatch: (a: Action) => void, enabled: boolean): Replay {
       const ev = SCRIPT[idx.current];
       const delay = Math.max(0, (ev.ts - ctl.current.current()) / speedRef.current);
       timer.current = window.setTimeout(() => {
-        dispatch({ ...ev, ts: Date.now() });
+        // With the real browser connected, its live results replace the scripted ones.
+        const mockBrowseResult =
+          ev.type === 'tool_call' && ev.data.status === 'done' && BROWSE_TOOLS.has(ev.data.tool);
+        if (!(bridge.connected && mockBrowseResult)) dispatch({ ...ev, ts: Date.now() });
         idx.current++;
         ctl.current.schedule();
       }, delay);

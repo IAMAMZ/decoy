@@ -7,8 +7,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/ws': { target: 'ws://localhost:8000', ws: true },
-      '/debug': 'http://localhost:8000',
+      '/ws': { target: 'ws://127.0.0.1:8000', ws: true },
+      '/debug': 'http://127.0.0.1:8000',
+      // Real browser service (backend/browser/server.py)
+      '/browser': { target: 'ws://127.0.0.1:8001', ws: true },
     },
   },
 });

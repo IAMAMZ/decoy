@@ -1,6 +1,7 @@
 import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ReplayControls } from './components/ReplayControls';
+import { useBrowserBridge, type Bridge } from './events/browserBridge';
 import type { CallState } from './events/reducer';
 import type { CallEvent } from './events/types';
 import { LIVE, useCallEvents } from './events/useCallEvents';
@@ -19,6 +20,7 @@ const TAKEOVER_LINE = "This looks like a scam. Don't worry, I'll handle it from 
 
 function App() {
   const { state, connected, replay, inject } = useCallEvents();
+  const browser = useBrowserBridge(state.tools, state.callId, inject);
   const [showControls, setShowControls] = useState(true);
   const path = window.location.pathname;
 
@@ -51,13 +53,15 @@ function App() {
 
   return (
     <>
-      <Page path={path} state={state} />
-      {showControls && path !== '/caller' && <ReplayControls live={LIVE} connected={connected} replay={replay} />}
+      <Page path={path} state={state} browser={browser} />
+      {showControls && path !== '/caller' && (
+        <ReplayControls live={LIVE} connected={connected} replay={replay} realBrowser={browser.connected} />
+      )}
     </>
   );
 }
 
-function Page({ path, state }: { path: string; state: CallState }) {
+function Page({ path, state, browser }: { path: string; state: CallState; browser: Bridge }) {
   switch (path) {
     case '/dashboard':
       return <Dashboard state={state} />;
@@ -66,7 +70,7 @@ function Page({ path, state }: { path: string; state: CallState }) {
     case '/caller':
       return <Caller />;
     default:
-      return <Stage state={state} />;
+      return <Stage state={state} browser={browser} />;
   }
 }
 

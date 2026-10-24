@@ -59,6 +59,17 @@ function address(t: ToolCall): string {
 
 function Page({ t }: { t: ToolCall }) {
   const r = (t.result ?? {}) as Record<string, any>;
+  if (r.error) return <p className="empty">{r.summary}</p>;
+  if (t.tool === 'check_domain' && r.registered === false) {
+    return (
+      <dl className="whois enter">
+        <dt>Domain</dt>
+        <dd>{r.domain}</dd>
+        <dt>Registered</dt>
+        <dd className="bad">No, the domain doesn’t exist</dd>
+      </dl>
+    );
+  }
   if (t.tool === 'web_search') {
     return (
       <ol className="results">
