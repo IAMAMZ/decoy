@@ -1,7 +1,7 @@
 // Dashboard events, exactly as in the brief's Shared contract (WebSocket /ws/events).
 // Optional fields marked "extension" are additions the contract doesn't list yet.
 
-// extension: 'customer' is the real Margaret (push-to-talk Y) before Decoy takes over.
+// extension: 'customer' is the real customer (push-to-talk Y) before Decoy takes over.
 export type Speaker = 'caller' | 'customer' | 'ai';
 export type Mode = 'monitoring' | 'protecting' | 'takeover';
 export type IntelKind = 'mule_account' | 'callback_number' | 'url' | 'tactic';
@@ -22,6 +22,8 @@ export type CallEvent =
   | Ev<'latency', { ms: number }>
   | Ev<'score', { score: number; flags: string[]; evidence: string }>
   | Ev<'mode', { mode: Mode }>
+  // extension: the phone asks the customer before Decoy takes over; 'declined' means don't ask again this call
+  | Ev<'takeover_offer', { status: 'asking' | 'declined' }>
   | Ev<'tool_call', {
       id: string;
       tool: string;

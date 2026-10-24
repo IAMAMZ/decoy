@@ -2,7 +2,7 @@
 // dashboard and Decoy's screen animate it. Real where a browser can reach the real thing:
 // check_domain uses the live RDAP registry; web_search uses Tavily when a key is set.
 import type { CallEvent } from '../events/types';
-import { CUSTOMER_ID, officialFor, PENDING_TRANSFERS, SCAM_NUMBERS } from './data';
+import { CUSTOMER_ID, officialFor, SCAM_NUMBERS } from './data';
 
 export type Emit = (ev: CallEvent) => void;
 type Result = Record<string, unknown>;
@@ -80,13 +80,18 @@ export function verifyInstitution(claimedOrg: string, callerNumber: string): Res
   return { official_number: o.number, match: digits(o.number) === digits(callerNumber) };
 }
 
-export function pendingTransfers(): Result {
-  return { customer_id: CUSTOMER_ID, transactions: PENDING_TRANSFERS };
+export function pendingTransfers(amount = 0, claimedOrg = ''): Result {
+  return {
+    customer_id: CUSTOMER_ID,
+    transactions:
+      amount > 0
+        ? [{ id: 'tx_flagged', amount, to: claimedOrg ? `${claimedOrg} flagged transfer` : 'Flagged transfer', status: 'pending' }]
+        : [],
+  };
 }
 
-export function freezeTransfer(id: string): Result {
-  const tx = PENDING_TRANSFERS.find((t) => t.id === id);
-  return { status: 'frozen', amount: tx?.amount ?? 0 };
+export function freezeTransfer(amount = 0): Result {
+  return { status: 'frozen', amount };
 }
 
 export async function checkDomain(domain: string): Promise<Result> {

@@ -18,6 +18,7 @@ export type Analysis = {
   flags: string[];
   evidence: string;
   claimed_org: string;
+  amount: number;
   intel: { kind: 'mule_account' | 'callback_number' | 'url'; value: string }[];
 };
 
@@ -32,6 +33,10 @@ const ANALYZE_TOOL = {
       flags: { type: 'array', items: { type: 'string', enum: FLAGS } },
       evidence: { type: 'string', description: 'one short sentence a bank analyst would write' },
       claimed_org: { type: 'string', description: 'organisation the caller claims to represent, or empty' },
+      amount: {
+        type: 'number',
+        description: 'dollar amount the caller claims is at risk or asks the customer to transfer/pay, or 0 if no amount was mentioned',
+      },
       intel: {
         type: 'array',
         description: 'account numbers, phone numbers or websites the CALLER gave, numbers written as digits',
@@ -59,18 +64,24 @@ const REPORT_TOOL = {
       report: {
         type: 'string',
         description:
-          '2-3 sentences written by a bank fraud analyst summarizing what the caller claimed and asked for, how Decoy verified and handled the call (including stalling as Margaret if takeover occurred), and the concrete evidence or intel captured.',
+          '2-3 sentences written by a bank fraud analyst summarizing what the caller claimed and asked for, how Decoy verified and handled the call (including stalling as the customer if takeover occurred), and the concrete evidence or intel captured.',
       },
     },
     required: ['report'],
   },
 };
 
-const INSTRUCTIONS = `You are a bank fraud analyst silently monitoring a phone call to Margaret, 78, one of the bank's customers.
-Lines are marked [CALLER], [MARGARET] (the real customer) or [MARGARET-AI] (our assistant speaking as her after takeover).
+const INSTRUCTIONS = `You are a bank fraud analyst silently monitoring a phone call to one of the bank's customers.
+Lines are marked [CALLER], [CUSTOMER] (the real customer) or [CUSTOMER-AI] (our assistant speaking as them after takeover).
 After each [CALLER] line, call analyze_turn with your assessment of the whole call so far. Listen for urgency, pressure, secrecy, bank impersonation and requests to move money.
-Scores rise gradually as evidence builds; one mild phrase is not enough for 0.8. A friendly or ordinary call stays low.
+Scores rise as evidence builds. A friendly or ordinary call stays low, but once the pattern is clear, say so:
+- Caller claims to be the bank or police AND asks to move money, share a card number, PIN, password or one-time code: 0.85 or higher.
+- A "safe account", gift cards or remote-access software: 0.7-0.85.
+- Bank impersonation plus urgency or secrecy, without a request yet: 0.4-0.6.
+- Only claiming to be the bank: 0.3 or lower.
+Never lower the score because the caller sounds polite or professional.
 Only use the flag "safe_account" when the caller asks to move money to a different or "safe" account.
+If the caller mentions a specific dollar amount at risk or to transfer, include it in amount.
 When you receive [CALL ENDED], call write_report with a concise 2-3 sentence incident report grounded in the conversation and verified tool findings.`;
 
 export class Brain {
@@ -131,7 +142,7 @@ export class Brain {
   }
 
   /** Add a line to the brain's view of the call. For caller lines, resolves with its analysis. */
-  hear(tag: 'CALLER' | 'MARGARET' | 'MARGARET-AI', text: string): Promise<Analysis | null> {
+  hear(tag: 'CALLER' | 'CUSTOMER' | 'CUSTOMER-AI', text: string): Promise<Analysis | null> {
     const run = async () => {
       if (this.ready) await this.ready.catch(() => {});
       this.send({
@@ -193,6 +204,7 @@ export class Brain {
           flags: (a.flags ?? []).filter((f) => (FLAGS as readonly string[]).includes(f)),
           evidence: a.evidence ?? '',
           claimed_org: a.claimed_org ?? '',
+          amount: Math.max(0, Number(a.amount) || 0),
           intel: (a.intel ?? []).filter((i) => ['mule_account', 'callback_number', 'url'].includes(i?.kind)),
         });
       } catch {

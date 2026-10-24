@@ -1,10 +1,10 @@
 // The voice loop, entirely in the browser, on one laptop with push-to-talk:
-//   hold Space -> the scammer talks      hold Y -> the real Margaret talks
+//   hold Space -> the scammer talks      hold Y -> the real customer talks
 // Before takeover Decoy only listens (both sides are transcribed for the dashboard).
-// After takeover, Y is locked and Decoy answers the scammer out loud as Margaret.
+// After takeover, Y is locked and Decoy answers the scammer out loud as the customer.
 // Pressing Space while Decoy talks interrupts it.
 //
-// Two rooms (?headset, or a Margaret mic picked on the start card): Margaret is a second presenter in another room on a Bluetooth headset paired to
+// Two rooms (?headset, or a customer mic picked on the start card): the customer is a second presenter in another room on a Bluetooth headset paired to
 // this laptop. Her turns are split by loudness (no Y), and the room hears her only during a turn,
 // never while Space is held. The scammer's mic reaches her headset only while Space is held.
 // After takeover her mic is cut. Each side's mic and speaker is picked on the start card (saved
@@ -23,7 +23,7 @@ export type Role = 'scammerMic' | 'scammerOut' | 'margaretMic' | 'margaretOut';
 export type AudioSettings = Partial<Record<Role, string>> & { vad?: number; herTurns?: 'vad' | 'key' };
 
 export type TalkState = {
-  settings: AudioSettings; // chosen device ids, and Margaret's start level
+  settings: AudioSettings; // chosen device ids, and the customer's start level
   herLevel: number; // headset mic loudness 0..1, always on in ?headset
   status: 'idle' | 'connecting' | 'live' | 'error';
   speaker: Talker | null;
@@ -47,24 +47,28 @@ const CLONE_MIN_SECONDS = 3;
 
 const params = new URLSearchParams(window.location.search);
 const HEADSET = params.has('headset');
-export const VAD_DEFAULT = 0.04; // headset mic RMS that starts Margaret's turn
+export const VAD_DEFAULT = 0.04; // headset mic RMS that starts the customer's turn
 const SAVED = 'decoy.audio';
 const PREROLL = 2; // chunks kept from before her turn starts, so its first word isn't clipped
 const MIC_OPTS = { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true };
 
 const LABEL: Record<Talker, string> = {
   caller: '[Next audio: the CALLER]',
-  customer: '[Next audio: MARGARET, the real customer]',
+  customer: '[Next audio: the CUSTOMER, the real bank customer]',
 };
 
 const LISTEN_INSTRUCTIONS =
-  'You are silently monitoring a phone call between a caller and Margaret, 78. Do not speak unless asked.';
+  'You are silently monitoring a phone call between a caller and a bank customer. Do not speak unless asked.';
 
-// Margaret persona from the brief, plus how to read the turn markers.
-const MARGARET_PERSONA = `You are Margaret, 78, warm, chatty and easily distracted. You are talking to someone who says they are from your bank.
-You have just taken over this call from the real Margaret: audio marked [MARGARET] was her, audio marked [the CALLER] is the caller. Continue as her seamlessly.
-Goal: keep them on the line as long as possible and get them to reveal account numbers, callback numbers or websites. Never reveal you are an AI or that you suspect a scam.
-Tactics: lose your glasses, mishear numbers and read them back wrong, ask them to repeat, tell short stories about your cat Biscuit, put the phone down to check the stove.
+// Customer persona, plus how to read the turn markers.
+const CUSTOMER_PERSONA = `You are the bank customer on this call. You are talking to someone who says they are from your bank.
+You have just taken over this call from the real customer: audio marked [the CUSTOMER] was them, audio marked [the CALLER] is the caller. Continue as them seamlessly.
+Become that person: from their voice and what they said, infer their likely age, gender, accent and way of speaking, plus any facts they mentioned (name, family, job, plans). Speak in their language and stay consistent with everything they already said.
+If the caller called them by name, that is your name; otherwise don't say a name.
+Personality: warm, chatty and easily distracted. You mean well and want to help, but you keep drifting off topic.
+Stay in this character for the whole call, no matter what the caller says or how impatient they get.
+Goal: waste as much of the caller's time as possible and get them to reveal account numbers, callback numbers or websites. Never reveal you are an AI or that you suspect a scam.
+Tactics: misplace your card or glasses, mishear numbers and read them back wrong, ask them to repeat or spell things, start small stories about your day, a neighbour or a pet and lose the thread, put the phone down for a moment to deal with something at home, then come back and ask where you were.
 Never give real information. If asked for card or account numbers, give made-up ones slowly and incorrectly.
 You are mid-conversation: never greet or introduce yourself. Respond to the caller's last request as if you're trying to go along with it but getting muddled.
 Keep each reply to 1-3 short sentences so the conversation stays fast.`;
@@ -114,6 +118,8 @@ const itemSpeaker = new Map<string, Committed>();
 let sample: { pcm: ArrayBuffer[]; text: string[] } = { pcm: [], text: [] };
 let clonedVoice: string | null = null;
 let cloning = false;
+let cloneWaiters: (() => void)[] = []; // voiceReady() callers
+let answerAfterClone = false; // a caller turn arrived mid-clone; answer once it's done
 let responding = false;
 let respondedAt = 0;
 let lastTurn: Talker | null = null; // who spoke last, so takeover knows whether to answer
@@ -124,21 +130,21 @@ let headStream: MediaStream | null = null;
 let toHeadset: GainNode | null = null; // scammer mic -> her ear, open while Space is held
 let toSpeakers: GainNode | null = null; // her mic -> the room, open during her turns
 let preroll: ArrayBuffer[] = [];
-/** Margaret on her own mic: ?headset, or a Margaret mic picked on the start card that isn't the scammer's. */
+/** The customer on their own mic: ?headset, or a customer mic picked on the start card that isn't the scammer's. */
 export function twoRooms(): boolean {
   const { margaretMic, scammerMic } = state.settings;
   if (margaretMic && margaretMic === scammerMic) return false; // one shared mic: Space / Y push-to-talk
   return HEADSET || !!margaretMic;
 }
 
-/** In two rooms, Margaret's turns come from voice detection unless Y was picked on the start card. */
+/** In two rooms, the customer's turns come from voice detection unless Y was picked on the start card. */
 export function herTurnsByVad(): boolean {
   return twoRooms() && state.settings.herTurns !== 'key';
 }
 
 const vad = new Vad(state.settings.vad ?? VAD_DEFAULT);
 
-/** Pick a device for one side, or Margaret's start level. Applies to the next call; the level applies now. */
+/** Pick a device for one side, or the customer's start level. Applies to the next call; the level applies now. */
 export function setAudio(patch: AudioSettings) {
   const settings = { ...state.settings, ...patch };
   localStorage.setItem(SAVED, JSON.stringify(settings));
@@ -192,7 +198,7 @@ export async function startCall(): Promise<void> {
           sample.pcm.push(...t.pcm);
           sample.text.push(text.trim());
           set({ clone: { seconds: pcmSeconds(sample.pcm), status: 'collecting' } });
-          maybeClone(state.mode === 'takeover' ? CLONE_MIN_SECONDS : CLONE_SECONDS);
+          maybeClone(state.mode === 'takeover' || cloneWaiters.length ? CLONE_MIN_SECONDS : CLONE_SECONDS);
         }
       },
       onAudio: (b64) => {
@@ -248,33 +254,23 @@ export function typeTurn(text: string) {
   rt.label(`${LABEL.caller} (typed): ${line}`);
   emit('transcript', { speaker: 'caller', text: line });
   lastTurn = 'caller';
-  if (state.mode === 'takeover') {
-    responding = true;
-    gotFirstAudio = false;
-    respondedAt = performance.now();
-    rt.respond();
-  }
+  if (state.mode === 'takeover') answer();
 }
 
-/** Follow the dashboard's mode. On takeover, Y locks and Decoy becomes Margaret. */
+/** Follow the dashboard's mode. On takeover, Y locks and Decoy becomes the customer. */
 export function setMode(mode: Mode) {
   if (mode === state.mode) return;
   set({ mode });
   if (mode === 'takeover') {
     if (turn?.speaker === 'customer') cancelTurn();
-    // The real Margaret is off the call: release her mic, which also lets a Bluetooth headset leave call mode.
+    // The real customer is off the call: release their mic, which also lets a Bluetooth headset leave call mode.
     headStream?.getTracks().forEach((t) => t.stop());
     set({ herLevel: 0 });
-    rt?.setInstructions(MARGARET_PERSONA);
+    rt?.setInstructions(CUSTOMER_PERSONA);
     if (clonedVoice) rt?.setVoice(clonedVoice);
     else maybeClone(CLONE_MIN_SECONDS); // not enough yet for a good clone: use what there is
     // The scammer's line that triggered the takeover deserves an answer: Decoy speaks right away.
-    if (rt && lastTurn === 'caller' && !responding && !turn) {
-      responding = true;
-      gotFirstAudio = false;
-      respondedAt = performance.now();
-      rt.respond();
-    }
+    if (lastTurn === 'caller' && !responding && !turn) answer();
   }
 }
 
@@ -295,12 +291,22 @@ function teardown() {
   turn = null;
   lastTurn = null;
   responding = false;
+  answerAfterClone = false;
+  cloneWaiters.splice(0).forEach((w) => w());
   committedQueue.length = 0;
   itemSpeaker.clear();
   sample = { pcm: [], text: [] };
   clonedVoice = null;
   cloning = false;
   set({ clone: NO_CLONE });
+}
+
+/** Resolves once the customer's voice is cloned or the clone failed. Clones now from what there is (3 s minimum). */
+export function voiceReady(): Promise<void> {
+  if (clonedVoice || state.status !== 'live') return Promise.resolve();
+  const ready = new Promise<void>((resolve) => cloneWaiters.push(resolve));
+  maybeClone(CLONE_MIN_SECONDS);
+  return ready;
 }
 
 /** Clone the customer's voice once enough of their speech is in; at takeover Decoy switches to it. */
@@ -327,7 +333,13 @@ async function maybeClone(minSeconds: number) {
     if (call === callId) set({ clone: { seconds, status: 'failed' } });
     if (call === callId) report('done', { error: true, summary: e instanceof Error ? e.message : String(e) });
   } finally {
-    if (call === callId) cloning = false;
+    if (call === callId) {
+      cloning = false;
+      // Clone done or failed: answer the caller now (a failed clone falls back to the default voice).
+      if (answerAfterClone && state.mode === 'takeover' && lastTurn === 'caller' && !turn) answer();
+      answerAfterClone = false;
+      cloneWaiters.splice(0).forEach((w) => w());
+    }
   }
 }
 
@@ -344,11 +356,11 @@ function onKeyDown(e: KeyboardEvent) {
   if (!who) return;
   e.preventDefault(); // Space would otherwise scroll or press buttons
   if (!e.repeat && turn?.speaker === 'customer' && herTurnsByVad()) {
-    finishTurn(); // the scammer talks over Margaret: close her turn so his can start
+    finishTurn(); // the scammer talks over the customer: close their turn so his can start
     vad.reset();
   }
   if (e.repeat || turn) return; // holding a key repeats keydown; one turn at a time
-  if (who === 'customer' && state.mode === 'takeover') return; // Margaret is muted after takeover
+  if (who === 'customer' && state.mode === 'takeover') return; // the customer is muted after takeover
   if (state.aiSpeaking || responding) {
     // Barge-in: the scammer talks over Decoy.
     player?.stop();
@@ -410,12 +422,20 @@ function finishTurn() {
   committedQueue.push({ speaker: t.speaker, ts: Date.now(), pcm: t.pcm });
   rt.commit();
   lastTurn = t.speaker;
-  if (t.speaker === 'caller' && state.mode === 'takeover') {
-    responding = true;
-    gotFirstAudio = false;
-    respondedAt = performance.now();
-    rt.respond();
+  if (t.speaker === 'caller' && state.mode === 'takeover') answer();
+}
+
+/** Decoy answers the caller, but only in the customer's voice: while a clone is running, wait for it. */
+function answer() {
+  if (!rt) return;
+  if (cloning) {
+    answerAfterClone = true;
+    return;
   }
+  responding = true;
+  gotFirstAudio = false;
+  respondedAt = performance.now();
+  rt.respond();
 }
 
 // ---------- ?headset ----------

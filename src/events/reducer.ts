@@ -21,6 +21,7 @@ export type CallState = {
   startedAt: number | null;
   endedAt: number | null;
   mode: Mode;
+  takeoverOffer: 'asking' | 'declined' | null;
   modeChangedAt: Partial<Record<Mode, number>>;
   score: number;
   scoreHistory: number[];
@@ -43,6 +44,7 @@ export const initialState: CallState = {
   startedAt: null,
   endedAt: null,
   mode: 'monitoring',
+  takeoverOffer: null,
   modeChangedAt: {},
   score: 0,
   scoreHistory: [],
@@ -89,6 +91,8 @@ export function reduce(s: CallState, a: Action): CallState {
     case 'mode':
       if (a.data.mode === s.mode) return s;
       return { ...s, mode: a.data.mode, modeChangedAt: { ...s.modeChangedAt, [a.data.mode]: a.ts } };
+    case 'takeover_offer':
+      return { ...s, takeoverOffer: a.data.status };
     case 'tool_call': {
       const { id, tool, args, status, result } = a.data;
       const existing = s.tools.find((t) => t.id === id);

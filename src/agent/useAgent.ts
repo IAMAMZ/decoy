@@ -1,8 +1,8 @@
 // Decoy as an agent, for live calls (?mic): listens through the Higgs brain, raises the score,
-// protects Margaret, takes over, captures the scammer's details and files a report.
+// protects the customer, takes over, captures the scammer's details and files a report.
 //
 //   monitoring --score >= 0.6--> protecting (look up caller, verify the number, freeze transfer;
-//   the family alert fires on its own) --score >= 0.8, or a hard flag at >= 0.6--> takeover
+//   the family alert fires on its own) --score >= 0.8, or a hard flag at >= 0.6, once the voice is cloned, and the customer says yes on the phone--> takeover
 //
 // With the real browser (?browser), the number is verified as soon as the caller names a bank we can
 // check (RBC), not at protecting: the screen shows it early and protect() reuses the result.
@@ -14,9 +14,10 @@ import type { CallState } from '../events/reducer';
 import type { CallEvent, IntelKind } from '../events/types';
 import { bridge } from '../events/browserBridge';
 import { MIC } from '../events/useCallEvents';
+import { voiceReady } from '../audio';
 import { Brain, type Analysis } from './brain';
 import { officialFor } from './data';
-import { findIntel, formatPhone, intelKey, keywordFlags, type Found } from './extract';
+import { findAmount, findIntel, formatPhone, intelKey, keywordFlags, type Found } from './extract';
 import * as tools from './tools';
 
 const PROTECT_AT = 0.6;
@@ -24,9 +25,10 @@ const TAKEOVER_AT = 0.8;
 const HARD_FLAGS = ['safe_account', 'gift_cards', 'remote_access'];
 const NEEDS_WORDS = ['gift_cards', 'remote_access'];
 const POLICY_FLAGS = ['safe_account', 'payment_request', 'remote_access', 'gift_cards'];
-const MAX_RISE = 0.25; // per turn, so the meter climbs instead of jumping
+const CLONE_WAIT_MS = 30000; // takeover waits this long for the voice clone, then goes ahead in the default voice
+const MAX_RISE = 0.3; // per turn, so the meter climbs instead of jumping
 const MAX_FALL = 0.1;
-const TAKEOVER_LINE = "Margaret, this call is a scam. Your money is safe. You can hang up now; I'll handle it from here.";
+const TAKEOVER_LINE = "This call is a scam. Your money is safe. You can hang up now; I'll handle it from here.";
 const TACTICS: Record<string, string> = {
   safe_account: 'Safe-account transfer',
   secrecy: 'secrecy demand',
@@ -49,6 +51,7 @@ type Run = {
   protect: Promise<void> | null;
   takeoverStarted: boolean;
   takeoverAt: number | null;
+  amount: number; // dynamic dollar amount extracted from the call by the AI / transcript
   frozen: number;
   ended: boolean;
 };
@@ -85,6 +88,7 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
       protect: null,
       takeoverStarted: false,
       takeoverAt: null,
+      amount: 0,
       frozen: 0,
       ended: false,
     };
@@ -109,7 +113,7 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
     for (const line of state.transcript) {
       if (r.seen.has(line.id)) continue;
       r.seen.add(line.id);
-      const tag = line.speaker === 'caller' ? 'CALLER' : line.speaker === 'customer' ? 'MARGARET' : 'MARGARET-AI';
+      const tag = line.speaker === 'caller' ? 'CALLER' : line.speaker === 'customer' ? 'CUSTOMER' : 'CUSTOMER-AI';
       if (line.speaker === 'caller') {
         const backup = findIntel(line.text);
         const words = keywordFlags(line.text);
@@ -140,6 +144,14 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
     if (r.ended || r.callId !== run.current?.callId) return;
     // "RBC fraud prevention team" -> "RBC" when it's a bank we have an official record for.
     if (a?.claimed_org) r.claimedOrg = officialFor(a.claimed_org)?.org ?? a.claimed_org;
+    const amt = (a?.amount && a.amount > 0 ? a.amount : 0) || findAmount(line);
+    if (amt > 0) {
+      r.amount = amt;
+      if (r.protect && r.frozen !== amt) {
+        r.frozen = amt;
+        tool('freeze_transaction', { transaction_id: 'tx_flagged', amount: amt }, () => tools.freezeTransfer(amt));
+      }
+    }
     // The caller just named a bank we can check: verify their number right away, in the background,
     // instead of waiting for the score to reach protecting. protect() reuses this result.
     if (bridge.connected && !r.numberCheck && officialFor(r.claimedOrg)) r.numberCheck = verifyNumber();
@@ -160,10 +172,14 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
     const hard = turnFlags.some((f) => HARD_FLAGS.includes(f));
     if (mode !== 'takeover' && (r.score >= TAKEOVER_AT || (hard && r.score >= PROTECT_AT))) {
       if (mode === 'monitoring') emit('mode', { mode: 'protecting' });
-      // Let the protect steps play out on screen first, then hand the call to Decoy.
-      setTimeout(() => {
-        if (!r.ended && live.current.mode !== 'takeover') emit('mode', { mode: 'takeover' });
-      }, mode === 'monitoring' ? 6000 : 0);
+      // Let the protect steps play out on screen first, and wait for the customer's voice clone,
+      // then ask the customer on the phone whether Decoy should take over. Until then the real customer stays on and keeps feeding the clone.
+      const shown = new Promise((ok) => setTimeout(ok, mode === 'monitoring' ? 6000 : 0));
+      const cloned = Promise.race([voiceReady(), new Promise((ok) => setTimeout(ok, CLONE_WAIT_MS))]);
+      Promise.all([shown, cloned]).then(() => {
+        if (!r.ended && r.callId === run.current?.callId && live.current.mode !== 'takeover' && !live.current.takeoverOffer)
+          emit('takeover_offer', { status: 'asking' });
+      });
     } else if (mode === 'monitoring' && r.score >= PROTECT_AT) {
       emit('mode', { mode: 'protecting' });
     }
@@ -202,19 +218,20 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
   }
 
   async function freezePending(r: Run) {
-    const pending = (await tool('get_pending_transactions', { customer_id: 'margaret_c' }, tools.pendingTransfers)) as {
-      transactions?: { id: string }[];
-    };
-    for (const tx of pending.transactions ?? []) {
-      const res = await tool('freeze_transaction', { transaction_id: tx.id }, () => tools.freezeTransfer(tx.id));
-      r.frozen += Number(res.amount) || 0;
-    }
+    const amt = r.amount;
+    await tool('get_pending_transactions', { customer_id: 'margaret_c' }, () => tools.pendingTransfers(amt, r.claimedOrg));
+    const res = await tool(
+      'freeze_transaction',
+      amt > 0 ? { transaction_id: 'tx_flagged', amount: amt } : { scope: 'outbound_transfers' },
+      () => tools.freezeTransfer(amt),
+    );
+    r.frozen = Number(res.amount) || amt;
   }
 
   async function takeover(r: Run) {
     r.takeoverStarted = true;
     await r.protect;
-    await tool('take_over_call', { persona: 'Margaret' }, () => ({ routing: 'ai_persona', customer_line: 'muted' }));
+    await tool('take_over_call', { persona: 'customer' }, () => ({ routing: 'ai_persona', customer_line: 'muted' }));
     r.takeoverAt = Date.now();
     if (!live.current.avatar) emit('avatar', { text: TAKEOVER_LINE });
     // Most telling tactic first (TACTICS is in priority order).
@@ -268,7 +285,8 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
       s.evidence && r.claimedOrg ? `${s.evidence.replace(/\.$/, '')}.` : '',
       checks.length ? `${checks[0].replace(/\.$/, '')}.` : '',
       r.flags.size ? `Signals: ${[...r.flags].map((f) => f.replace(/_/g, ' ')).join(', ')}.` : '',
-      r.takeoverAt ? `Decoy took over as Margaret${aiTurns ? ` for ${aiTurns} turn${aiTurns === 1 ? '' : 's'}` : ''} (${minutesWasted} min stalled).` : '',
+      r.takeoverAt ? `Decoy took over as the customer${aiTurns ? ` for ${aiTurns} turn${aiTurns === 1 ? '' : 's'}` : ''} (${minutesWasted} min stalled).` : '',
+      r.frozen > 0 ? `$${r.frozen.toLocaleString('en-US')} transfer frozen.` : '',
       intelItems.length ? `Captured ${intelItems.join(', ')}.` : '',
       `Report ${reportId} filed.`,
     ];
@@ -290,7 +308,7 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
           .filter(
             (t) =>
               t.status === 'done' &&
-              !['analyze_turn', 'log_intel', 'get_pending_transactions', 'freeze_transaction', 'open_page', 'generate_report'].includes(t.tool),
+              !['analyze_turn', 'log_intel', 'get_pending_transactions', 'open_page', 'generate_report'].includes(t.tool),
           )
           .map((t) => `- ${t.tool}: ${describeResult(t.tool, t.args, t.result).text}`);
         const intelLines = s.intel.map((i) => `- ${INTEL_LABEL[i.kind]}: ${i.value}`);
@@ -301,6 +319,7 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
           `Final mode: ${s.mode} (peak scam score ${Math.round(r.score * 100)}%)`,
           `Red flags: ${[...r.flags].join(', ') || 'none'}`,
           `Takeover duration: ${r.takeoverAt ? `${minutesWasted} min (${aiTurns} AI turns stalling caller)` : 'did not take over'}`,
+          r.frozen > 0 ? `Amount at risk / frozen: $${r.frozen.toLocaleString('en-US')}` : '',
           findings.length ? `Tool findings:\n${findings.join('\n')}` : '',
           intelLines.length ? `Captured intel:\n${intelLines.join('\n')}` : '',
         ]

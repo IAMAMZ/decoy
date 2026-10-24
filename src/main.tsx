@@ -75,7 +75,7 @@ function App() {
 
   return (
     <>
-      <Page path={path} state={state} browser={browser} />
+      <Page path={path} state={state} browser={browser} inject={inject} />
       {/* Only before the first call: afterwards the summary card stays visible, and the bar restarts. */}
       {MIC && path !== '/caller' && state.status === 'idle' && <StartCall />}
       {MIC ? (
@@ -90,16 +90,16 @@ function App() {
   );
 }
 
-function Page({ path, state, browser }: { path: string; state: CallState; browser: Bridge }) {
+function Page({ path, state, browser, inject }: { path: string; state: CallState; browser: Bridge; inject: (ev: CallEvent) => void }) {
   switch (path) {
     case '/dashboard':
       return <Dashboard state={state} />;
     case '/call':
-      return <Call state={state} />;
+      return <Call state={state} inject={inject} />;
     case '/caller':
       return <Caller />;
     default:
-      return <Stage state={state} browser={browser} />;
+      return <Stage state={state} browser={browser} inject={inject} />;
   }
 }
 
