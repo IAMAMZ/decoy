@@ -42,9 +42,9 @@ export function TalkBar() {
       <span className={`decoy-talk ${t.aiSpeaking ? 'on' : ''}`}>{t.aiSpeaking ? 'Decoy speaking' : ''}</span>
       {t.error && <span className="talk-error">{t.error}</span>}
       <nav>
+        <a href="/?mic&browser">Browser</a>
         <a href="/?mic">Stage</a>
         <a href="/dashboard?mic">Dashboard</a>
-        <a href="/?mic&browser">Browser</a>
         <a href="/call?mic">Call</a>
       </nav>
       {live ? (

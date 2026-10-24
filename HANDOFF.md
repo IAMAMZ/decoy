@@ -12,8 +12,9 @@ npm run dev                    # http://localhost:5173
 
 | URL | What it does |
 | --- | --- |
+| `localhost:5173/` | **Browser tab**, the main page: opens `/?mic&browser`, the live call on real Chrome (needs `python backend/server.py`) |
 | `localhost:5173/?mic` | **Live call** with your mic. Press Enter or click Start. |
-| `localhost:5173/` | Scripted replay of `src/data/fake_events.json`, for UI work and as the backup demo |
+| `localhost:5173/?replay` | Scripted replay of `src/data/fake_events.json`, for UI work and as the backup demo |
 | `/dashboard?mic`, `/call?mic` | The same live call on the detail console and the phone screen |
 | `localhost:5173/?mic&headset` | **Two-room demo**: Margaret is a second presenter on a Bluetooth headset paired to this Mac (see below). Picking a Margaret mic on the start card in plain `?mic` does the same. |
 

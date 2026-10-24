@@ -38,15 +38,26 @@ python backend/server.py   # browser backend, ready when it prints "Uvicorn runn
 npm run dev                # frontend
 ```
 
-Then open **http://localhost:5173/?mic&browser** in Chrome.
+Then open **http://localhost:5173** in Chrome. It opens the **Browser** tab (`/?mic&browser`): the live call with Decoy's screen on real Chrome.
 
-| URL | What it does |
+## Tabs
+
+The bar at the bottom links the views of the same call:
+
+| Tab | URL | Shows |
+| --- | --- | --- |
+| **Browser** (main page) | `/?mic&browser` | The stage with Decoy's screen on the real Chrome from the browser backend |
+| Stage | `/?mic` | The stage with a scripted animation on Decoy's screen; no backend needed |
+| Dashboard | `/dashboard?mic` | The bank's fraud console: score, flags, the agent's checks and their browser steps |
+| Call | `/call?mic` | Margaret's phone screen |
+| Caller | `/caller` | The scammer's phone screen (replay bar only) |
+
+| URL flag | Does |
 | --- | --- |
-| `/?mic&browser` | Live call with your mic + real Chrome streamed into Decoy's screen |
-| `/?mic&browser&headset` | Two-room call: scammer on this laptop, customer on a Bluetooth headset in another room |
-| `/dashboard?mic` | The six-panel bank fraud desk console |
-| `/call?mic` | Standalone customer phone screen |
-| `/` | Scripted replay of `src/data/fake_events.json` (`?at=68000` jumps to 1:08 in the call) |
+| `?mic` | Live call with your mic (push-to-talk). Without it, the scripted replay of `src/data/fake_events.json` plays. |
+| `&browser` | Connect Decoy's screen to the browser backend. Without it, Decoy's screen plays a scripted animation. |
+| `&headset` | Two-room call: scammer on this laptop, customer on a Bluetooth headset in another room |
+| `?replay` | The scripted replay on the stage (`&at=68000` jumps to 1:08 in the call). Use it instead of a bare `/`, which opens the Browser tab. |
 
 Check the browser backend is connected: Decoy's screen says **"live · real Chrome"** in its top-right corner.
 
