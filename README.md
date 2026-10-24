@@ -1,15 +1,21 @@
-# Decoy
+# <img src="docs/duck.svg" width="32" height="32" align="top" alt="" /> Decoy
 
-An AI fraud interceptor: a live call on one laptop (push-to-talk, Higgs Realtime), a bank fraud dashboard, and Decoy's screen, a real Chrome browser streamed into the app that a person (and later the agent) can drive.
+*Scammers think they've found a sitting duck; it's a decoy.*
+
+Decoy is an AI fraud interceptor built on Boson's Higgs stack. It listens to a live call, clones the customer's voice from their first few turns, checks the caller's claims in a real Chrome browser, freezes risky transfers, and—once the customer taps **Take over** on their phone—answers the scammer in the customer's own voice while pulling out mule account numbers and phishing links.
+
+![Decoy stage during a live takeover](docs/screenshots/stage-live.png)
+
+On screen: the customer's phone on the left, a real headless Chrome checking `rbc.com` in the middle, the live transcript and tool trace below it, and the scam score, red flags and captured intel on the right.
 
 ## What runs where
 
 | Part | Where | Port |
 | --- | --- | --- |
-| Frontend (React + Vite): stage, dashboard, phone screens, voice loop | `src/` | 5173 |
+| Frontend (React + Vite): stage, dashboard, phone screen, voice loop, Higgs analyst brain | `src/` | 5173 |
 | Browser backend (Playwright + FastAPI): one headless Chrome streamed to Decoy's screen, and the fraud checks that run on it | `backend/` | 8001 |
 
-The voice call talks to Boson straight from the browser, so it needs no backend. The browser backend is for Decoy's screen and its checks.
+The voice call and the analyst brain talk to Boson straight from the browser (`wss://api.boson.ai/v1/realtime` and `POST /v1/audio/voices`). The Python backend is only for Decoy's live Chrome screen and its web checks.
 
 ## Setup (once)
 
@@ -32,39 +38,77 @@ python backend/server.py   # browser backend, ready when it prints "Uvicorn runn
 npm run dev                # frontend
 ```
 
-Then open **http://localhost:5173/?mic&browser** in Chrome.
+Then open **http://localhost:5173** in Chrome. It opens the **Browser** tab (`/?mic&browser`): the live call with Decoy's screen on real Chrome.
+
+## Tabs
+
+The bar at the bottom links the views of the same call:
+
+| Tab | URL | Shows |
+| --- | --- | --- |
+| **Browser** (main page) | `/?mic&browser` | The stage with Decoy's screen on the real Chrome from the browser backend |
+| Stage | `/?mic` | The stage with a scripted animation on Decoy's screen; no backend needed |
+| Dashboard | `/dashboard?mic` | The bank's fraud console: score, flags, the agent's checks and their browser steps |
+| Call | `/call?mic` | Margaret's phone screen |
+| Caller | `/caller` | The scammer's phone screen (replay bar only) |
 
 | URL flag | Does |
 | --- | --- |
 | `?mic` | Live call with your mic (push-to-talk). Without it, the scripted replay of `src/data/fake_events.json` plays. |
 | `&browser` | Connect Decoy's screen to the browser backend. Without it, Decoy's screen plays a scripted animation. |
+| `&headset` | Two-room call: scammer on this laptop, customer on a Bluetooth headset in another room |
+| `?replay` | The scripted replay on the stage (`&at=68000` jumps to 1:08 in the call). Use it instead of a bare `/`, which opens the Browser tab. |
 
-Check it's connected: Decoy's screen says **"live · real Chrome"** in its top-right corner. If it says "agent web tools", the backend isn't running or `&browser` is missing.
+Check the browser backend is connected: Decoy's screen says **"live · real Chrome"** in its top-right corner.
 
 ## Using it
 
-**Call** (`?mic`): press **Enter** to start, hold **Space** to talk as the scammer, hold **Y** to talk as Margaret, **Shift+T** forces the takeover, **Esc** ends the call.
+**Call** (`?mic`):
+- Press **Enter** to start.
+- Hold **Space** to talk as the scammer (or type into *"Or type as the scammer…"* in the bottom bar).
+- Hold **Y** to talk as the customer—or in two-room headset mode, just speak into the headset. As the customer talks, Decoy collects 3–8 seconds of speech and clones their voice (`Voice clone 8.0s → Voice cloned`).
+- At `0.60` scam likelihood, Decoy enters **Protecting**: verifies the caller's number on the bank's live site, checks the bank's fraud rules, freezes the transfer, and sends a family push alert via `ntfy`.
+- At `0.80` (or a hard flag like `safe_account`), the phone asks **"Let Decoy take this call?"** Tap **Take over** (or press **Shift+T**): the customer's mic mutes and Decoy takes over the conversation in their cloned voice.
+- Press **Esc** (or the red hang-up button on the phone) to end the call and generate the incident summary from the call transcript.
 
-**Decoy's screen** (`&browser`): it starts on Decoy's own standby page (`decoy://standby`, `backend/standby.html`) and only goes to a bank's site when a check runs. Otherwise it works like a normal browser.
+<details>
+<summary><strong>Screenshots: audio setup, fraud desk, and end-of-call report</strong></summary>
+<br />
 
-- Type a URL in the address bar and press Enter.
-- Click, double-click, hover and scroll on the page.
-- Click into a page, then type; Enter, Backspace, arrows, Tab and Ctrl shortcuts work. Typing there doesn't trigger push-to-talk.
-- ← → ↻ for back, forward and reload.
+**Start card & two-room audio picker (`/?mic&browser`)**  
+Pick separate mics and speakers for the scammer and the customer, or run on one shared mic with `Space` and `Y`.
 
-Before the call starts, the "Start call" card covers the page; start the call to use the browser.
+![Start call and audio device picker](docs/screenshots/start-audio-setup.png)
 
-Cookie banners are hidden in Decoy's Chrome, not clicked: no consent is given or refused. Many banners have no reject option (their X means accepting all cookies), and they cover the bottom of the screen. The list of hidden banner containers is `COOKIE_BANNERS` in `backend/browser.py`.
+**Fraud desk (`/dashboard`)**  
+The bank analyst view with the confidence bar, signal breakdown, tool trace, WHOIS/RDAP lookup, and captured intel.
 
-Open a page from a script or terminal (for testing):
+![Fraud desk view](docs/screenshots/dashboard.png)
 
-```bash
-curl -X POST "http://127.0.0.1:8001/browser/open?url=example.com"
+**End-of-call incident report**  
+When the call ends, the Higgs analyst brain writes an incident summary from the transcript and verified tool results.
+
+![Incident summary card](docs/screenshots/summary-report.png)
+
+</details>
+
+<details>
+<summary><strong>How Decoy checks a caller's claims (Higgs investigator + real Chrome)</strong></summary>
+<br />
+
+```mermaid
+flowchart LR
+  Mic["Mic / Headset\n(AudioWorklet 24 kHz)"] --> RT["Higgs Realtime\n(voice + higgs-stt-3.1)"]
+  Mic -. "3–8s customer speech" .-> Clone["POST /v1/audio/voices\n(instant voice clone)"]
+  Clone -. "voice_<id> at takeover" .-> RT
+  RT -->|"~0.48s audio reply"| Speaker["Player (barge-in)"]
+  RT -->|"transcript"| Agent["useAgent.ts"]
+  Agent <-->|"analyze_turn\nwrite_report"| Brain["Higgs Realtime\n(text analyst brain)"]
+  Agent <-->|"investigate"| Inv["Higgs Investigator\n(open_page, find_on_page, click, check_domain)"]
+  Inv <-->|"/browser/tools/*"| Chrome["FastAPI + Real Chrome"]
 ```
 
-## How Decoy checks a caller's claims
-
-Nothing in the code knows about any bank. When the caller names an organisation, asks for something, or gives a link, the agent hands a plain-language task to the **Higgs investigator** (`src/agent/investigator.ts`): a second, text-only Higgs Realtime session with the generic browser tools below. It decides what to open, reads, clicks and highlights the evidence, then calls `report` with a verdict:
+Nothing in the code is hardcoded to a specific bank. When the caller names an organisation, asks for something, or gives a link, the agent hands a plain-language task to the **Higgs investigator** (`src/agent/investigator.ts`): a text-only Higgs Realtime session with the generic browser tools below. It decides what to open, reads, clicks and highlights the evidence, then calls `report` with a verdict:
 
 | When | Task | Verdicts |
 | --- | --- | --- |
@@ -72,9 +116,13 @@ Nothing in the code knows about any bank. When the caller names an organisation,
 | The caller asks for a safe-account transfer, payment, remote access or gift cards | Find the organisation's own guidance on whether it would ever ask that | same |
 | The caller gives a link | Check the domain's registration and whether it's the organisation's official site | same |
 
-On the dashboard each task is an `investigate` call, with every browser step it took (`web.open_page`, `web.click`, `web.find_on_page`, …) listed underneath; Decoy's screen shows each step live. Tested with a TD Bank scam call: it opened tdbank.com, clicked "Protect against fraud", highlighted TD's fraud line and reported the caller's number as contradicted, in 4 steps and about 10 s.
+On the dashboard each task is an `investigate` call, with every browser step it took (`web.open_page`, `web.click`, `web.find_on_page`, …) listed underneath; Decoy's screen shows each step live.
 
-## Browser tools
+</details>
+
+<details>
+<summary><strong>Browser tools &amp; HTTP API (<code>backend/tools/</code>)</strong></summary>
+<br />
 
 | Tool | Args | What it does |
 | --- | --- | --- |
@@ -85,32 +133,18 @@ On the dashboard each task is an `investigate` call, with every browser step it 
 | `check_domain` | `domain` | Registration (RDAP: registered? when? registrar?), then try to open it |
 | `web_search` | `query` | Tavily search, only if `TAVILY_API_KEY` is set in `backend/.env` |
 
-Call them over HTTP. From the frontend use the same-origin path `/browser/tools/...` (Vite proxies it):
+Call them over HTTP (from the frontend, Vite proxies `/browser/tools/...` to port `8001`):
 
 ```bash
 curl http://127.0.0.1:8001/browser/tools          # list the tools as function-calling schemas
-curl -X POST http://127.0.0.1:8001/browser/tools/find_on_page   -H "Content-Type: application/json"   -d '{"id": "t3", "args": {"text": "never ask"}}'
+curl -X POST http://127.0.0.1:8001/browser/tools/find_on_page \
+  -H "Content-Type: application/json" \
+  -d '{"id": "t3", "args": {"text": "never ask"}}'
 ```
 
 - `id` is optional. Pass the dashboard's `tool_call` id so Decoy's screen shows this run under the same id.
 - `ok: false` means the tool couldn't finish (site down, 30 s timeout); it still returns 200 with a `summary`. Bad calls get 400 (missing argument) or 404 (unknown tool).
 - The tools never log in, type into forms or submit anything.
-
-## Backend layout
-
-```
-backend/
-├─ server.py        entry point: FastAPI app on port 8001
-├─ browser.py       Chrome, the stream to Decoy's screen, page primitives (navigate, find + highlight), a person's input
-├─ standby.html     the start page (decoy://standby)
-├─ routes/
-│  ├─ browser.py    /browser/ws (stream + input), /browser/open
-│  └─ tools.py      GET /browser/tools, POST /browser/tools/{name}
-└─ tools/
-   ├─ __init__.py   REGISTRY: add a tool here and the routes pick it up
-   ├─ web.py        the generic browser tools
-   └─ rdap.py       domain registration lookup
-```
 
 ### Adding a browser tool
 
@@ -118,19 +152,9 @@ backend/
 2. **Warm its pages:** if the tool opens fixed pages, list them in the Tool's `warm=(...)`. At startup the backend loads them once in a hidden tab, so the first check during a call doesn't pay for a cold page load. Pages that come from the call (a link the caller gives) can't be warmed.
 3. **Frontend:** nothing to register: the investigator reads the tool list from `GET /browser/tools` when it starts. Add a label for `web.my_check` to `TOOL_LABEL` in `src/components/format.ts` so the dashboard names it nicely.
 
-The screen's page size (1280×720) lives in three places that must match: `VIEWPORT` in `backend/browser.py`, `PAGE_W`/`PAGE_H` in `src/components/LiveScreen.tsx`, and the `.as-shot` aspect-ratio in `src/styles.css`.
-
-## Browser stream protocol
-
-Clients connect to `ws://127.0.0.1:8001/browser/ws` (the Vite dev server proxies `/browser` to it).
-
-- **Server → clients:** `{"id", "type": frame|address|view|loading|caption|cursor|card|result|error, ...}`, the format `src/events/browserBridge.ts` reads. Frames are base64 JPEG at 1280×720.
-- **Client → server, a person's input:** `{"type": "input", "action": click|move|wheel|type|key|navigate|back|forward|reload, ...}` with `x`/`y` in page pixels (1280×720).
-- **Client → server:** `{"id", "tool": "open_page", "args": {"url"}}` opens a page. Fraud checks go through `/browser/tools`.
-
-Not built yet: the LLM that decides when to run the checks, and the replay mode's browse steps (use `?mic&browser`, not `?browser` alone).
+</details>
 
 ## More
 
-- `HANDOFF.md`: team handoff, voice loop details, who owns what.
-- `fraud-interceptor-brief.md`: the original build brief.
+- [`HANDOFF.md`](HANDOFF.md): team handoff, voice loop details, and family push alert setup (`VITE_NTFY_TOPIC`).
+- [`fraud-interceptor-brief.md`](fraud-interceptor-brief.md): the original build brief.

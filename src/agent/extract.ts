@@ -49,6 +49,14 @@ export function keywordFlags(text: string): string[] {
   return FLAG_WORDS.filter(([, re]) => re.test(text)).map(([f]) => f);
 }
 
+/** Pull a dollar amount mentioned in the line ("$4,500", "4500 dollars"), or 0 if none. */
+export function findAmount(text: string): number {
+  const m = text.match(/\$\s*(\d[\d,]*(?:\.\d{1,2})?)\b|\b(\d[\d,]*)\s*(?:dollars?|bucks?|cad|usd)\b/i);
+  if (!m) return 0;
+  const n = Number((m[1] ?? m[2]).replace(/,/g, ''));
+  return Number.isFinite(n) && n >= 10 ? n : 0;
+}
+
 /** Same value written differently ("647 555 0142" vs "+1 (647) 555-0142") compares equal. */
 export function intelKey(kind: string, value: string): string {
   if (kind === 'url') return `url:${value.toLowerCase().replace(/^https?:\/\/|^www\.|\/$/g, '')}`;

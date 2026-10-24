@@ -66,10 +66,13 @@ export function describeResult(tool: string, args: Record<string, any>, r: any):
     case 'get_pending_transactions': {
       const txs: any[] = r.transactions ?? [];
       const total = txs.reduce((n, t) => n + (t.amount ?? 0), 0);
-      return { text: txs.length ? `${txs.length} pending · ${money(total)} to ${txs[0].to}` : 'Nothing pending', tone: txs.length ? 'danger' : 'ok' };
+      return {
+        text: total > 0 ? `${txs.length} pending · ${money(total)} to ${txs[0].to}` : 'No pending transfers · monitoring outbound',
+        tone: total > 0 ? 'danger' : 'ok',
+      };
     }
     case 'freeze_transaction':
-      return { text: `${money(r.amount)} transfer ${r.status}`, tone: 'ok' };
+      return { text: r.amount ? `${money(r.amount)} transfer ${r.status}` : 'Outbound transfers locked', tone: 'ok' };
     case 'notify_family':
       if (r.error) return { text: r.summary, tone: 'neutral' };
       return { text: `${r.via ?? 'Message'} ${r.delivery} to ${args.contact}`, tone: 'ok' };
@@ -78,7 +81,7 @@ export function describeResult(tool: string, args: Record<string, any>, r: any):
     case 'log_intel':
       return { text: `Stored as ${r.record_id}`, tone: 'ok' };
     case 'generate_report':
-      return { text: `Report ${r.report_id} filed`, tone: 'ok' };
+      return { text: r.summary ? `Report ${r.report_id} · ${r.summary}` : `Report ${r.report_id} filed`, tone: 'ok' };
     // The investigator's verdict on a caller's claim: contradicted = evidence of a scam.
     case 'investigate': {
       if (r.error) return { text: r.summary || "The investigator couldn't finish", tone: 'neutral' };

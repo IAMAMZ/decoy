@@ -21,7 +21,7 @@ export function PhoneScreen({ state, inject }: { state: CallState; inject: (ev: 
     (callerCheck && (callerCheck.result as { verdict?: string })?.verdict === 'contradicted');
   const checks = [
     notReally && `Not really ${claimed}`,
-    frozen && `$${(frozen.amount ?? 0).toLocaleString('en-US')} transfer paused`,
+    frozen && (frozen.amount ? `$${frozen.amount.toLocaleString('en-US')} transfer paused` : 'Outbound transfers paused'),
     notified &&
       !(notified.result as { error?: boolean })?.error &&
       `${String(notified.args.contact ?? 'Family').split(' ')[0]} has been notified`,

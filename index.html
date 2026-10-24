@@ -8,6 +8,8 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- The main page is the Browser view (live call + real Chrome). The scripted replay is /?replay. -->
+    <script>if (location.pathname === '/' && !location.search) history.replaceState(null, '', '/?mic&browser');</script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

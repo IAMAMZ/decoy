@@ -8,6 +8,3 @@ export const CUSTOMER_ID = 'margaret_c';
 export const SCAM_NUMBERS: Record<string, { reports: number; reputation: number }> = {
   '+1 (647) 555-0199': { reports: 37, reputation: 0.08 },
 };
-
-// The customer's account (mock): the transfer the scammer already talked them into.
-export const PENDING_TRANSFERS = [{ id: 'tx_8842', amount: 3000, to: 'New payee: J. Ortiz', status: 'pending' }];

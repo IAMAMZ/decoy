@@ -36,9 +36,9 @@ export function ReplayControls({
         </>
       )}
       <nav>
-        <a href={`/${window.location.search}`}>Stage</a>
-        <a href={`/dashboard${window.location.search}`}>Dashboard</a>
         <a href={withBrowser()}>Browser</a>
+        <a href={`/${window.location.search || '?replay'}`}>Stage</a>
+        <a href={`/dashboard${window.location.search}`}>Dashboard</a>
         <a href={`/call${window.location.search}`}>Call</a>
         <a href={`/caller${window.location.search}`}>Caller</a>
       </nav>
