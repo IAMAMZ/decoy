@@ -1,6 +1,6 @@
 // The bank's own systems, mocked as the brief says ("judges care that the agent acts,
-// not that the bank is real"). Official contact pages are real: saved snapshots of the live
-// page text, because a web page can't load another bank's site directly.
+// not that the bank is real"). Nothing here knows about any real organisation: the
+// investigator checks callers' claims on the live web.
 
 export const CUSTOMER_ID = 'margaret_c';
 
@@ -8,31 +8,3 @@ export const CUSTOMER_ID = 'margaret_c';
 export const SCAM_NUMBERS: Record<string, { reports: number; reputation: number }> = {
   '+1 (647) 555-0199': { reports: 37, reputation: 0.08 },
 };
-
-type OfficialSource = {
-  names: RegExp;
-  org: string;
-  number: string;
-  url: string;
-  title: string;
-  excerpt: string;
-  captured: string;
-};
-
-// Snapshot of rbcroyalbank.com/customer-service ("Call Us" dialog), captured 2026-10-23.
-export const OFFICIAL: OfficialSource[] = [
-  {
-    names: /\b(rbc|royal bank)\b/i,
-    org: 'RBC',
-    number: '1-800-769-2511',
-    url: 'www.rbcroyalbank.com/customer-service/index.html',
-    title: 'Customer Service | RBC Royal Bank',
-    excerpt:
-      'Call Us. Everyday Banking: Banking Accounts, Client Cards, Lines of Credit and Loans, Mortgages 1-800-769-2511. Teletypewriter (TTY) Services for those who are deaf or hard of hearing: 1-800-661-1275.',
-    captured: '2026-10-23',
-  },
-];
-
-export function officialFor(claimedOrg: string): OfficialSource | undefined {
-  return claimedOrg ? OFFICIAL.find((o) => o.names.test(claimedOrg)) : undefined;
-}

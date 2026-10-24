@@ -32,7 +32,12 @@ const ANALYZE_TOOL = {
       score: { type: 'number', description: '0-1 likelihood the caller is a scammer, considering the whole call so far' },
       flags: { type: 'array', items: { type: 'string', enum: FLAGS } },
       evidence: { type: 'string', description: 'one short sentence a bank analyst would write' },
-      claimed_org: { type: 'string', description: 'organisation the caller claims to represent, or empty' },
+      claimed_org: {
+        type: 'string',
+        description:
+          'name of the specific organisation the caller SAID they are calling from, e.g. "TD Bank", "Canada Revenue Agency". ' +
+          'Empty if they named none, or only a person ("your friend", "your grandson") or a vague "the bank".',
+      },
       amount: {
         type: 'number',
         description: 'dollar amount the caller claims is at risk or asks the customer to transfer/pay, or 0 if no amount was mentioned',
@@ -81,6 +86,8 @@ Scores rise as evidence builds. A friendly or ordinary call stays low, but once 
 - Only claiming to be the bank: 0.3 or lower.
 Never lower the score because the caller sounds polite or professional.
 Only use the flag "safe_account" when the caller asks to move money to a different or "safe" account.
+Not every scam is a bank scam: a caller posing as a friend or relative who needs money is a scam too, but not bank impersonation.
+Only use "bank_impersonation", and only fill claimed_org, when the caller says which organisation they are calling from. Never guess one.
 If the caller mentions a specific dollar amount at risk or to transfer, include it in amount.
 When you receive [CALL ENDED], call write_report with a concise 2-3 sentence incident report grounded in the conversation and verified tool findings.`;
 

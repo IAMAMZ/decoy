@@ -4,8 +4,9 @@
 //   monitoring --score >= 0.6--> protecting (look up caller, verify the number, freeze transfer;
 //   the family alert fires on its own) --score >= 0.8, or a hard flag at >= 0.6, once the voice is cloned, and the customer says yes on the phone--> takeover
 //
-// With the real browser (?browser), the number is verified as soon as the caller names a bank we can
-// check (RBC), not at protecting: the screen shows it early and protect() reuses the result.
+// With the real browser (?browser), a Higgs investigator checks the caller's claims on the live web with
+// generic browser tools, for whatever organisation the caller names: their number as soon as they name
+// it (protect() reuses that), what they ask the customer to do, and any link they give.
 //
 // Manual overrides (Shift+T / Shift+S) go through the same mode changes, so they run the same steps.
 import { useEffect, useRef } from 'react';
@@ -16,8 +17,8 @@ import { bridge } from '../events/browserBridge';
 import { MIC } from '../events/useCallEvents';
 import { voiceReady } from '../audio';
 import { Brain, type Analysis } from './brain';
-import { officialFor } from './data';
 import { findAmount, findIntel, formatPhone, intelKey, keywordFlags, type Found } from './extract';
+import { Investigator } from './investigator';
 import * as tools from './tools';
 
 const PROTECT_AT = 0.6;
@@ -29,6 +30,12 @@ const CLONE_WAIT_MS = 30000; // takeover waits this long for the voice clone, th
 const MAX_RISE = 0.3; // per turn, so the meter climbs instead of jumping
 const MAX_FALL = 0.1;
 const TAKEOVER_LINE = "This call is a scam. Your money is safe. You can hang up now; I'll handle it from here.";
+// What the brain may still put in claimed_org although no organisation was named: a vague "the bank"
+// or a person. Nothing to look up for those, so no number or policy check runs.
+const NOT_AN_ORG =
+  /^(?:(?:the|a|an|your|my|his|her)\s+)?(?:bank|bank's fraud (?:team|department)|fraud (?:team|department)|police|government|company|friend|family|relative|grandson|granddaughter|son|daughter|nephew|niece|cousin|brother|sister|mother|father|mom|dad|unknown|none|n\/a)s?$/i;
+const namedOrg = (org: string) => !!org.trim() && !NOT_AN_ORG.test(org.trim());
+
 const TACTICS: Record<string, string> = {
   safe_account: 'Safe-account transfer',
   secrecy: 'secrecy demand',
@@ -46,7 +53,9 @@ type Run = {
   flags: Set<string>;
   claimedOrg: string;
   intel: Set<string>;
-  numberCheck: Promise<Record<string, unknown>> | null; // verify_caller_number, run once per call
+  investigator: Promise<Investigator> | null; // opened on the first real-browser check
+  numberCheck: Promise<Record<string, unknown>> | null; // the caller-number investigation, run once per call
+  request: string; // the caller's line that asked for something a real organisation never asks
   policyChecked: boolean;
   protect: Promise<void> | null;
   takeoverStarted: boolean;
@@ -65,10 +74,36 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
     run.current && inject({ type, call_id: run.current.callId, ts: Date.now(), data } as CallEvent);
   const tool = (name: string, args: Record<string, unknown>, impl: (id: string) => Promise<Record<string, unknown>> | Record<string, unknown>) =>
     tools.runTool(inject, run.current!.callId, name, args, impl);
-  // Real check in Chrome (takes a few seconds): is the caller ID the bank's official number?
-  const verifyNumber = () => {
+
+  // The investigator session opens on the first check and is shared by the call's later ones.
+  const investigatorFor = (r: Run) =>
+    (r.investigator ??= tools.browserToolSchemas().then(async (schemas) => {
+      const inv = new Investigator();
+      await inv.connect(schemas);
+      return inv;
+    }));
+
+  // One claim checked on the live web by the Higgs investigator. It shows as an `investigate` call, with
+  // each browser step it takes as its own `web.*` call (and on Decoy's screen) underneath.
+  const investigate = (r: Run, kind: 'caller' | 'request' | 'link', task: string) =>
+    tool('investigate', { kind, claimed_org: r.claimedOrg || null, task }, async () => {
+      const inv = await investigatorFor(r);
+      const report = await inv.investigate(task, (name, args) =>
+        tool(`web.${name}`, args, (id) => tools.browserTool(name, args, id)),
+      );
+      return { ...report, error: report.verdict === 'inconclusive' && !report.summary };
+    });
+
+  const checkCallerNumber = (r: Run) => {
     const caller = live.current.callerNumber ?? '';
-    return tool('verify_caller_number', { number: caller }, (id) => tools.realCheck('verify_caller_number', { number: caller }, id));
+    const org = r.claimedOrg;
+    return investigate(
+      r,
+      'caller',
+      `The caller says they are from "${org}" and is calling the customer from ${caller}. Find ${org}'s official ` +
+        `customer phone number on its official website, highlight it with find_on_page, and report whether ${caller} ` +
+        `is an official ${org} number (contradicted if it isn't).`,
+    );
   };
 
   // ---- call lifecycle ----
@@ -83,7 +118,9 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
       flags: new Set(),
       claimedOrg: '',
       intel: new Set(),
+      investigator: null,
       numberCheck: null,
+      request: '',
       policyChecked: false,
       protect: null,
       takeoverStarted: false,
@@ -103,6 +140,7 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
     const r = run.current;
     if (!MIC || !r || state.status !== 'ended' || r.ended) return;
     r.ended = true;
+    r.investigator?.then((inv) => inv.close()).catch(() => {});
     finishCall(r);
   }, [state.status]);
 
@@ -142,8 +180,7 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
 
   function onAnalysis(r: Run, a: Analysis | null, backup: Found[], words: string[], line: string) {
     if (r.ended || r.callId !== run.current?.callId) return;
-    // "RBC fraud prevention team" -> "RBC" when it's a bank we have an official record for.
-    if (a?.claimed_org) r.claimedOrg = officialFor(a.claimed_org)?.org ?? a.claimed_org;
+    if (a?.claimed_org && namedOrg(a.claimed_org)) r.claimedOrg = a.claimed_org.trim();
     const amt = (a?.amount && a.amount > 0 ? a.amount : 0) || findAmount(line);
     if (amt > 0) {
       r.amount = amt;
@@ -152,9 +189,9 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
         tool('freeze_transaction', { transaction_id: 'tx_flagged', amount: amt }, () => tools.freezeTransfer(amt));
       }
     }
-    // The caller just named a bank we can check: verify their number right away, in the background,
+    // The caller just named who they claim to be: check their number right away, in the background,
     // instead of waiting for the score to reach protecting. protect() reuses this result.
-    if (bridge.connected && !r.numberCheck && officialFor(r.claimedOrg)) r.numberCheck = verifyNumber();
+    if (bridge.connected && !r.numberCheck && r.claimedOrg) r.numberCheck = checkCallerNumber(r);
     // The brain sometimes guesses concrete tactics nobody mentioned; only trust those when the words were said.
     const brainFlags = (a?.flags ?? []).filter((f) => !NEEDS_WORDS.includes(f) || words.includes(f));
     const turnFlags = [...new Set([...brainFlags, ...words])];
@@ -184,10 +221,20 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
       emit('mode', { mode: 'protecting' });
     }
 
-    // The caller asked for something banks never ask for: find the bank's own rule saying so.
-    if (bridge.connected && !r.policyChecked && turnFlags.some((f) => POLICY_FLAGS.includes(f))) {
+    // The caller asked for something legitimate organisations don't: find their own rule saying so.
+    // Only for a named organisation (a "friend" asking for gift cards has no rulebook to check). The
+    // request and the name can come in either order, so remember the request until both are known.
+    if (!r.request && turnFlags.some((f) => POLICY_FLAGS.includes(f))) r.request = line;
+    if (bridge.connected && !r.policyChecked && r.request && r.claimedOrg) {
       r.policyChecked = true;
-      tool('check_bank_policy', { claim: line }, (id) => tools.realCheck('check_bank_policy', { claim: line }, id));
+      const org = r.claimedOrg;
+      investigate(
+        r,
+        'request',
+        `The caller, who says they are from "${org}", told the customer: "${r.request}". Find ${org}'s ` +
+          `own official guidance on whether it would ever ask a customer to do this, highlight the rule with ` +
+          `find_on_page, and report contradicted if it says it never asks this.`,
+      );
     }
 
     captureIntel(r, [...(a?.intel ?? []), ...backup]);
@@ -198,18 +245,13 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
     await tool('lookup_caller', { number: caller }, () => tools.lookupCaller(caller));
     const org = r.claimedOrg;
     if (bridge.connected) {
-      // Usually already started when the caller named the bank; otherwise start it now, while the transfer is frozen.
-      const verifying = (r.numberCheck ??= verifyNumber());
+      // Usually already started when the caller named the organisation; otherwise start it now (if they
+      // named one), while the transfer is frozen.
+      if (org) r.numberCheck ??= checkCallerNumber(r);
       await freezePending(r);
-      await verifying;
+      await r.numberCheck;
       return;
     }
-    if (officialFor(org)) {
-      await tool('open_page', { url: officialFor(org)!.url }, () => tools.openOfficialPage(org));
-    }
-    await tool('verify_institution', { claimed_org: org || 'unknown', caller_number: caller }, () =>
-      tools.verifyInstitution(org, caller),
-    );
     if (tools.canSearch && org) {
       const q = `${org} "safe account" scam phone call`;
       await tool('web_search', { query: q }, () => tools.webSearch(q));
@@ -250,8 +292,16 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
       tool('log_intel', { type: f.kind, value: f.value }, () => ({ stored: true, record_id: `intel_${String(r.intel.size).padStart(2, '0')}` }));
       if (f.kind === 'url') {
         const domain = f.value.replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0];
-        if (bridge.connected) tool('check_link', { url: domain }, (id) => tools.realCheck('check_link', { url: domain }, id));
-        else tool('check_domain', { domain }, () => tools.checkDomain(domain));
+        if (bridge.connected) {
+          const org = r.claimedOrg;
+          investigate(
+            r,
+            'link',
+            `The caller${org ? `, who says they are from "${org}",` : ''} gave the customer this link: ${domain}. ` +
+              `Use check_domain on it, then report whether it is ${org ? `an official ${org} website` : 'a legitimate, established website'} ` +
+              `(contradicted if it isn't).`,
+          );
+        } else tool('check_domain', { domain }, () => tools.checkDomain(domain));
       }
     }
   }
@@ -271,7 +321,7 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
     const reportId = `FR-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${r.callId.slice(-4).toUpperCase()}`;
 
     const checks = s.tools
-      .filter((t) => t.status === 'done' && ['verify_caller_number', 'verify_institution', 'check_bank_policy', 'check_link', 'check_domain'].includes(t.tool))
+      .filter((t) => t.status === 'done' && ['investigate', 'check_domain'].includes(t.tool))
       .map((t) => describeResult(t.tool, t.args, t.result).text)
       .filter(Boolean);
     const intelItems = s.intel.filter((i) => i.kind !== 'tactic').map((i) => `${INTEL_LABEL[i.kind].toLowerCase()} ${i.value}`);
@@ -308,6 +358,7 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
           .filter(
             (t) =>
               t.status === 'done' &&
+              !t.tool.startsWith('web.') &&
               !['analyze_turn', 'log_intel', 'get_pending_transactions', 'open_page', 'generate_report'].includes(t.tool),
           )
           .map((t) => `- ${t.tool}: ${describeResult(t.tool, t.args, t.result).text}`);

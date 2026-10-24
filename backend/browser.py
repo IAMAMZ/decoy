@@ -28,25 +28,52 @@ SEND_TIMEOUT_S = 5  # a client that can't take a message this long is dropped
 MAX_QUEUED_FRAMES = 2  # a slow client skips frames instead of falling behind
 CURSOR_MOVE_S = 0.75  # matches the frontend cursor transition
 
-# Cookie banners cover the bottom of the screen (RBC's covers about a third). Hide them instead of
-# clicking: RBC's only buttons are "Accept All", "Manage Settings" and an X whose label says closing
-# accepts all cookies. Hiding makes no consent choice either way. Containers of common consent tools:
+# Cookie banners cover the bottom of the screen. Hide them instead of clicking: many offer only
+# "Accept All", "Manage Settings" and an X that itself means accepting all cookies. Hiding makes no
+# consent choice either way. Containers of common consent tools:
 COOKIE_BANNERS = [
-    "#onetrust-consent-sdk",  # OneTrust (RBC)
+    "#onetrust-consent-sdk",  # OneTrust
     "#CybotCookiebotDialog",  # Cookiebot
     "#truste-consent-track",  # TrustArc
     ".qc-cmp2-container",  # Quantcast
     "#didomi-host",  # Didomi
 ]
+# Sites with their own banner (HSBC's is a full-screen dialog) aren't in that list, so also sweep the page
+# for overlays about cookies: fixed or sticky elements, or dialogs, whose short text mentions cookies or
+# consent and that offer buttons. Hidden the same way, and the page's scroll lock is lifted.
 HIDE_COOKIE_BANNERS = """(() => {
   const add = () => {
     const style = document.createElement('style');
     style.textContent = `%s { display: none !important; }`;
     (document.head || document.documentElement).appendChild(style);
   };
+  const ABOUT_COOKIES = /cookie|consent|tracking technolog/i;
+  const sweep = () => {
+    if (!document.body) return;
+    let hid = false;
+    for (const el of document.body.querySelectorAll('div, section, aside, dialog, form, footer')) {
+      const dialog = el.getAttribute('role') === 'dialog' || el.getAttribute('aria-modal') === 'true' || el.tagName === 'DIALOG';
+      const pos = getComputedStyle(el).position;
+      if (!dialog && pos !== 'fixed' && pos !== 'sticky') continue;
+      const text = el.innerText || '';
+      if (!text || text.length > 4000 || !ABOUT_COOKIES.test(text) || !el.querySelector('button, [role=button]')) continue;
+      if (el.querySelector('nav')) continue; // a fixed header with a "Cookie policy" link, not a banner
+      el.style.setProperty('display', 'none', 'important');
+      hid = true;
+    }
+    if (hid) for (const el of [document.documentElement, document.body]) el.style.setProperty('overflow', 'auto', 'important');
+  };
+  let queued = false;
+  const later = () => { if (!queued) { queued = true; setTimeout(() => { queued = false; sweep(); }, 300); } };
+  const start = () => {
+    sweep();
+    new MutationObserver(later).observe(document.body, {childList: true, subtree: true});
+  };
   // Init scripts can run before the page has an <html> element; wait for it then.
   if (document.documentElement) add();
   else document.addEventListener('DOMContentLoaded', add, {once: true});
+  if (document.body) start();
+  else document.addEventListener('DOMContentLoaded', start, {once: true});
 })();""" % ", ".join(COOKIE_BANNERS)
 
 clients: dict[WebSocket, asyncio.Queue] = {}  # each client has its own outbox, so none can stall the rest
@@ -158,7 +185,7 @@ async def navigate(url: str) -> bool:
     broadcast({"type": "address", "text": shown(url), "typing": False})
     broadcast({"type": "loading", "on": True})
     try:
-        # Two tries: a page's own late redirect (RBC's homepage does one) can interrupt the first.
+        # Two tries: a page's own late redirect (some homepages do one) can interrupt the first.
         for attempt in range(2):
             try:
                 await page.goto(url, timeout=15000, wait_until="domcontentloaded")
@@ -184,8 +211,11 @@ async def open_page(url: str, rid: str = "live") -> dict:
 
 
 async def standby() -> None:
-    """Show Decoy's start page, quietly: no "Opening…" caption or result, just the waiting line."""
-    async with session("live"):
+    """Show Decoy's start page, quietly: no "Opening…" caption or result, just the waiting line.
+
+    Under a fresh run id, so a screen that still shows the last call's run starts clean.
+    """
+    async with session(next_id()):
         await navigate(START_URL)
         say("Waiting for something to check.")
 

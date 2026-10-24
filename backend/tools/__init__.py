@@ -1,16 +1,16 @@
 """Tool registry. Add a tool: write its function, then add one Tool(...) here; the routes pick it up.
 
-Each tool is `async fn(args: dict, rid: str) -> dict` returning {"ok", "verdict", "summary", ...}.
+Each tool is `async fn(args: dict, rid: str) -> dict` returning {"ok", "summary", ...}. These are
+generic browser tools: the agent (an LLM) decides which pages to open and what to look for.
 
-If the tool opens fixed pages, list them in `warm=`: the backend loads them once in a hidden tab at
-startup, so the first real check doesn't pay for a cold load during the call. Pages that depend on
-the call (a link the caller gives) can't be listed.
+If a tool always opens the same fixed pages, list them in `warm=`: the backend loads them once in a
+hidden tab at startup, so the first call doesn't pay for a cold load.
 """
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from . import rbc
+from . import web
 
 
 @dataclass(frozen=True)
@@ -35,29 +35,50 @@ REGISTRY = {
     t.name: t
     for t in [
         Tool(
-            "verify_caller_number",
-            "Check whether the caller's phone number is RBC's official number, by finding the official number on rbc.com.",
-            {"number": {"type": "string", "description": "The caller's number, e.g. +1 (647) 555-0199"}},
-            ("number",),
-            rbc.verify_caller_number,
-            warm=(rbc.SAFETY_URL,),
-        ),
-        Tool(
-            "check_bank_policy",
-            "Find RBC's own statement that it never asks for what the caller is asking (a transfer to a 'safe account', "
-            "a one-time code, a PIN, remote access, account details).",
-            {"claim": {"type": "string", "description": "What the caller asked for, e.g. 'move your money to a safe account'"}},
-            ("claim",),
-            rbc.check_bank_policy,
-            warm=(rbc.IMPERSONATION_URL, rbc.SAFETY_URL),
-        ),
-        Tool(
-            "check_link",
-            "Check a link the caller gave: is it an RBC domain, is it registered and how old, and does it open.",
-            {"url": {"type": "string", "description": "The link or domain, e.g. rbc-secure-verify.com"}},
+            "open_page",
+            "Open a web page in the real browser and get its title and visible text.",
+            {"url": {"type": "string", "description": "Full URL or domain, e.g. example.com/contact"}},
             ("url",),
-            rbc.check_link,
-            # nothing to warm: the link comes from the caller
+            web.open_page,
+        ),
+        Tool(
+            "read_page",
+            "Read the current page: its visible text (from an offset, for long pages) and the links on it.",
+            {"offset": {"type": "integer", "description": "Character offset into the page text, 0 to start"}},
+            (),
+            web.read_page,
+        ),
+        Tool(
+            "find_on_page",
+            "Find and highlight text on the current page; returns the match and the sentence around it. "
+            "Use this to show the evidence on screen.",
+            {
+                "text": {"type": "string", "description": "Exact words to find"},
+                "pattern": {"type": "string", "description": "Or a regular expression, e.g. for a phone number"},
+            },
+            (),
+            web.find_on_page,
+        ),
+        Tool(
+            "click",
+            "Click a link or button on the current page by its visible label, e.g. 'Contact us'.",
+            {"text": {"type": "string", "description": "The link or button's visible label"}},
+            ("text",),
+            web.click,
+        ),
+        Tool(
+            "check_domain",
+            "Look up a domain's registration (registered? when? registrar?) and try to open it.",
+            {"domain": {"type": "string", "description": "A domain or link, e.g. secure-verify-login.com"}},
+            ("domain",),
+            web.check_domain,
+        ),
+        Tool(
+            "web_search",
+            "Search the web (only if the backend has a search key). Prefer opening an official site you already know.",
+            {"query": {"type": "string", "description": "Search query"}},
+            ("query",),
+            web.web_search,
         ),
     ]
 }

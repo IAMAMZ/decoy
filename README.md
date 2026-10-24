@@ -82,7 +82,8 @@ When the call ends, the Higgs analyst brain writes an incident summary from the 
 </details>
 
 <details>
-<summary><strong>How the voice loop, brain, and browser fit together</strong></summary>
+<summary><strong>How Decoy checks a caller's claims (Higgs investigator + real Chrome)</strong></summary>
+<br />
 
 ```mermaid
 flowchart LR
@@ -92,46 +93,53 @@ flowchart LR
   RT -->|"~0.48s audio reply"| Speaker["Player (barge-in)"]
   RT -->|"transcript"| Agent["useAgent.ts"]
   Agent <-->|"analyze_turn\nwrite_report"| Brain["Higgs Realtime\n(text analyst brain)"]
-  Agent <-->|"/browser/tools/*\n/browser/ws"| Chrome["FastAPI + Real Chrome\n(rbc.com + RDAP)"]
+  Agent <-->|"investigate"| Inv["Higgs Investigator\n(open_page, find_on_page, click, check_domain)"]
+  Inv <-->|"/browser/tools/*"| Chrome["FastAPI + Real Chrome"]
 ```
 
-- **Two Higgs Realtime sessions run in parallel:** one handles the spoken call (`src/audio/realtime.ts`), and a second text-only session (`src/agent/brain.ts`) scores each caller turn (`analyze_turn`) and writes the closing report (`write_report`).
-- **Decoy's screen (`&browser`):** starts on `decoy://standby` (`backend/standby.html`) and opens real pages when a check runs. You can also type a URL, click, scroll, or use ← → ↻ directly on the canvas. Cookie banners are hidden via CSS injection (`COOKIE_BANNERS` in `backend/browser.py`) rather than clicked.
+Nothing in the code is hardcoded to a specific bank. When the caller names an organisation, asks for something, or gives a link, the agent hands a plain-language task to the **Higgs investigator** (`src/agent/investigator.ts`): a text-only Higgs Realtime session with the generic browser tools below. It decides what to open, reads, clicks and highlights the evidence, then calls `report` with a verdict:
+
+| When | Task | Verdicts |
+| --- | --- | --- |
+| The caller first names who they claim to be | Find that organisation's official number on its official site and compare it with the caller ID | `confirmed`, `contradicted`, `inconclusive` |
+| The caller asks for a safe-account transfer, payment, remote access or gift cards | Find the organisation's own guidance on whether it would ever ask that | same |
+| The caller gives a link | Check the domain's registration and whether it's the organisation's official site | same |
+
+On the dashboard each task is an `investigate` call, with every browser step it took (`web.open_page`, `web.click`, `web.find_on_page`, …) listed underneath; Decoy's screen shows each step live.
 
 </details>
 
 <details>
-<summary><strong>Real-browser fraud checks &amp; HTTP API (<code>backend/tools/</code>)</strong></summary>
+<summary><strong>Browser tools &amp; HTTP API (<code>backend/tools/</code>)</strong></summary>
 <br />
 
-Three checks run on the real Chrome instance so Decoy's screen shows the page opening and highlights the evidence:
-
-| Tool | Args | What it does | Verdicts |
-| --- | --- | --- | --- |
-| `verify_caller_number` | `number` | Finds RBC's official number on `rbc.com`'s fraud page and compares it with the caller's | `match`, `mismatch` |
-| `check_bank_policy` | `claim` | Finds RBC's own *"RBC will never ask you to…"* rule for what the caller asked for (e-Transfer / safe account, one-time code, remote access, PIN, password) | `against_rbc_policy`, `no_policy_found` |
-| `check_link` | `url` | Checks whether a domain is official RBC, unregistered, newly registered (RDAP), or a lookalike | `official`, `not_registered`, `new_domain`, `lookalike`, `not_rbc` |
+| Tool | Args | What it does |
+| --- | --- | --- |
+| `open_page` | `url` | Open a page; returns its title and visible text |
+| `read_page` | `offset` | The current page's text (from an offset) and its links |
+| `find_on_page` | `text` or `pattern` | Highlight the first visible match on screen; returns it and the sentence around it |
+| `click` | `text` | Click a link or button by its visible label |
+| `check_domain` | `domain` | Registration (RDAP: registered? when? registrar?), then try to open it |
+| `web_search` | `query` | Tavily search, only if `TAVILY_API_KEY` is set in `backend/.env` |
 
 Call them over HTTP (from the frontend, Vite proxies `/browser/tools/...` to port `8001`):
 
 ```bash
 curl http://127.0.0.1:8001/browser/tools          # list the tools as function-calling schemas
-curl -X POST http://127.0.0.1:8001/browser/tools/verify_caller_number \
+curl -X POST http://127.0.0.1:8001/browser/tools/find_on_page \
   -H "Content-Type: application/json" \
-  -d '{"id": "t3", "args": {"number": "+1 (647) 555-0199"}}'
+  -d '{"id": "t3", "args": {"text": "never ask"}}'
 ```
 
-```json
-{"id": "t3", "ok": true, "verdict": "mismatch",
- "summary": "+1 (647) 555-0199 is not RBC's official number (1-800-769-2511)",
- "official": "1-800-769-2511", "excerpt": "...", "source": "https://www.rbc.com/cyber-security/how-rbc-keeps-you-safe/index.html"}
-```
+- `id` is optional. Pass the dashboard's `tool_call` id so Decoy's screen shows this run under the same id.
+- `ok: false` means the tool couldn't finish (site down, 30 s timeout); it still returns 200 with a `summary`. Bad calls get 400 (missing argument) or 404 (unknown tool).
+- The tools never log in, type into forms or submit anything.
 
 ### Adding a browser tool
 
 1. **Backend:** write `async def my_check(args, rid) -> dict` in `backend/tools/`, then add a `Tool(...)` to `REGISTRY` in `backend/tools/__init__.py`. It's served at `POST /browser/tools/my_check` with no route changes.
-2. **Warm its pages:** if the tool opens fixed pages, list them in the Tool's `warm=(...)`. At startup the backend loads them once in a hidden tab, so the first check during a call doesn't pay for a cold page load.
-3. **Frontend:** add the name to `REAL_CHECKS` in `src/agent/tools.ts`, call it from `src/agent/useAgent.ts` with `tools.realCheck(...)` (when `bridge.connected`), and add its label and result text to `TOOL_LABEL` / `describeResult` in `src/components/format.ts`.
+2. **Warm its pages:** if the tool opens fixed pages, list them in the Tool's `warm=(...)`. At startup the backend loads them once in a hidden tab, so the first check during a call doesn't pay for a cold page load. Pages that come from the call (a link the caller gives) can't be warmed.
+3. **Frontend:** nothing to register: the investigator reads the tool list from `GET /browser/tools` when it starts. Add a label for `web.my_check` to `TOOL_LABEL` in `src/components/format.ts` so the dashboard names it nicely.
 
 </details>
 

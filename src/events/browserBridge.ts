@@ -62,6 +62,7 @@ export function useBrowserBridge(tools: ToolCall[], callId: string | null, injec
   const [connected, setConnected] = useState(false);
   const [sessions, setSessions] = useState<Record<string, Session>>({});
   const [current, setCurrent] = useState<string | null>(null);
+  const lastId = useRef<string | null>(null);
 
   useEffect(() => {
     if (!ENABLED) return;
@@ -82,8 +83,19 @@ export function useBrowserBridge(tools: ToolCall[], callId: string | null, injec
       };
       sock.onmessage = (m) => {
         const msg = JSON.parse(m.data);
+        const prev = lastId.current;
+        lastId.current = msg.id;
         setCurrent(msg.id);
-        setSessions((all) => ({ ...all, [msg.id]: apply(all[msg.id] ?? blank(msg.id, toolsRef.current), msg) }));
+        setSessions((all) => {
+          // A new run starts on the page the last one left (a find or click sends no new address
+          // or frame until something changes), not on an empty screen.
+          const before = prev ? all[prev] : undefined;
+          const start = all[msg.id] ?? {
+            ...blank(msg.id, toolsRef.current),
+            ...(before && { address: before.address, view: before.view, frame: before.frame }),
+          };
+          return { ...all, [msg.id]: apply(start, msg) };
+        });
         // In live mode the agent backend started the run and emits the tool_call result itself.
         if (!LIVE && (msg.type === 'result' || msg.type === 'error')) {
           const t = toolsRef.current.find((x) => x.id === msg.id);
@@ -106,6 +118,15 @@ export function useBrowserBridge(tools: ToolCall[], callId: string | null, injec
       ws.current?.close();
     };
   }, [inject]);
+
+  // A new call starts on Decoy's start page, not on whatever the last call left open. Only when a call
+  // starts, so opening another tab during a call doesn't reset the screen under the investigator.
+  const resetFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!callId || !connected || resetFor.current === callId) return; // once per call, not on a reconnect
+    resetFor.current = callId;
+    fetch('/browser/standby', { method: 'POST' }).catch(() => {});
+  }, [callId, connected]);
 
   useEffect(() => {
     if (tools.length === 0 && sent.current.size) {

@@ -29,7 +29,7 @@ export function findIntel(text: string): Found[] {
     const isPhone = (digits.length === 11 && digits[0] === '1') || (digits.length === 10 && /[2-9]/.test(digits[0]));
     out.push(isPhone ? { kind: 'callback_number', value: formatPhone(digits) } : { kind: 'mule_account', value: digits });
   }
-  // Only websites written as one ("rbc-secure-verify.com"). Spelled-out ones ("R B C secure
+  // Only websites written as one ("bank-secure-verify.com"). Spelled-out ones ("bank secure
   // verify dot com") are ambiguous, so those are left to the brain.
   for (const m of text.matchAll(/\b(?:https?:\/\/)?(?:www\.)?((?:[a-z0-9-]+\.)+(?:com|ca|net|org|info|co|io))\b/gi)) {
     out.push({ kind: 'url', value: m[1].toLowerCase() });
