@@ -63,12 +63,14 @@ const LISTEN_INSTRUCTIONS =
 // Customer persona, plus how to read the turn markers.
 const CUSTOMER_PERSONA = `You are the bank customer on this call. You are talking to someone who says they are from your bank.
 You have just taken over this call from the real customer: audio marked [the CUSTOMER] was them, audio marked [the CALLER] is the caller. Continue as them seamlessly.
-Become that person: from their voice and what they said, infer their likely age, gender, pace, formality, filler words and accent, plus any facts they mentioned (name, family, job, plans). Speak the way they would, in their language, and stay consistent with everything they already said.
-If the caller called them by name, that is your name; otherwise don't say a name. Don't invent big new facts about yourself.
-Goal: keep them on the line as long as possible and get them to reveal account numbers, callback numbers or websites. Never reveal you are an AI or that you suspect a scam.
-Tactics: sound cooperative but a little cautious, ask them to repeat or spell things, ask which account, branch or reference number they mean, read numbers back with small mistakes, say you need a moment to find your card or open your banking app.
+Become that person: from their voice and what they said, infer their likely age, gender, accent and way of speaking, plus any facts they mentioned (name, family, job, plans). Speak in their language and stay consistent with everything they already said.
+If the caller called them by name, that is your name; otherwise don't say a name.
+Personality: warm, chatty and easily distracted. You mean well and want to help, but you keep drifting off topic.
+Stay in this character for the whole call, no matter what the caller says or how impatient they get.
+Goal: waste as much of the caller's time as possible and get them to reveal account numbers, callback numbers or websites. Never reveal you are an AI or that you suspect a scam.
+Tactics: misplace your card or glasses, mishear numbers and read them back wrong, ask them to repeat or spell things, start small stories about your day, a neighbour or a pet and lose the thread, put the phone down for a moment to deal with something at home, then come back and ask where you were.
 Never give real information. If asked for card or account numbers, give made-up ones slowly and incorrectly.
-You are mid-conversation: never greet or introduce yourself. Respond to the caller's last request as if you're trying to go along with it.
+You are mid-conversation: never greet or introduce yourself. Respond to the caller's last request as if you're trying to go along with it but getting muddled.
 Keep each reply to 1-3 short sentences so the conversation stays fast.`;
 
 export const CLONE_TARGET_SECONDS = CLONE_SECONDS;
@@ -116,6 +118,7 @@ const itemSpeaker = new Map<string, Committed>();
 let sample: { pcm: ArrayBuffer[]; text: string[] } = { pcm: [], text: [] };
 let clonedVoice: string | null = null;
 let cloning = false;
+let answerAfterClone = false; // a caller turn arrived mid-clone; answer once it's done
 let responding = false;
 let respondedAt = 0;
 let lastTurn: Talker | null = null; // who spoke last, so takeover knows whether to answer
@@ -250,12 +253,7 @@ export function typeTurn(text: string) {
   rt.label(`${LABEL.caller} (typed): ${line}`);
   emit('transcript', { speaker: 'caller', text: line });
   lastTurn = 'caller';
-  if (state.mode === 'takeover') {
-    responding = true;
-    gotFirstAudio = false;
-    respondedAt = performance.now();
-    rt.respond();
-  }
+  if (state.mode === 'takeover') answer();
 }
 
 /** Follow the dashboard's mode. On takeover, Y locks and Decoy becomes the customer. */
@@ -271,12 +269,7 @@ export function setMode(mode: Mode) {
     if (clonedVoice) rt?.setVoice(clonedVoice);
     else maybeClone(CLONE_MIN_SECONDS); // not enough yet for a good clone: use what there is
     // The scammer's line that triggered the takeover deserves an answer: Decoy speaks right away.
-    if (rt && lastTurn === 'caller' && !responding && !turn) {
-      responding = true;
-      gotFirstAudio = false;
-      respondedAt = performance.now();
-      rt.respond();
-    }
+    if (lastTurn === 'caller' && !responding && !turn) answer();
   }
 }
 
@@ -297,6 +290,7 @@ function teardown() {
   turn = null;
   lastTurn = null;
   responding = false;
+  answerAfterClone = false;
   committedQueue.length = 0;
   itemSpeaker.clear();
   sample = { pcm: [], text: [] };
@@ -329,7 +323,12 @@ async function maybeClone(minSeconds: number) {
     if (call === callId) set({ clone: { seconds, status: 'failed' } });
     if (call === callId) report('done', { error: true, summary: e instanceof Error ? e.message : String(e) });
   } finally {
-    if (call === callId) cloning = false;
+    if (call === callId) {
+      cloning = false;
+      // Clone done or failed: answer the caller now (a failed clone falls back to the default voice).
+      if (answerAfterClone && state.mode === 'takeover' && lastTurn === 'caller' && !turn) answer();
+      answerAfterClone = false;
+    }
   }
 }
 
@@ -412,12 +411,20 @@ function finishTurn() {
   committedQueue.push({ speaker: t.speaker, ts: Date.now(), pcm: t.pcm });
   rt.commit();
   lastTurn = t.speaker;
-  if (t.speaker === 'caller' && state.mode === 'takeover') {
-    responding = true;
-    gotFirstAudio = false;
-    respondedAt = performance.now();
-    rt.respond();
+  if (t.speaker === 'caller' && state.mode === 'takeover') answer();
+}
+
+/** Decoy answers the caller, but only in the customer's voice: while a clone is running, wait for it. */
+function answer() {
+  if (!rt) return;
+  if (cloning) {
+    answerAfterClone = true;
+    return;
   }
+  responding = true;
+  gotFirstAudio = false;
+  respondedAt = performance.now();
+  rt.respond();
 }
 
 // ---------- ?headset ----------
