@@ -25,3 +25,9 @@ htmlcov/
 CLAUDE.local.md
 .codex/
 .agents/
+AGENTS.md
+AGENTS.override.md
+CLAUDE.md
+
+# Paseo (seeded into worktrees from the main checkout)
+paseo.json
