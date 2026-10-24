@@ -11,6 +11,7 @@ import asyncio
 import contextlib
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import WebSocket
 from playwright.async_api import async_playwright
@@ -18,17 +19,42 @@ from playwright.async_api import async_playwright
 # 16:9, so the frame fills the wide screen panel on the stage. Keep in sync with PAGE_W/PAGE_H in
 # src/components/LiveScreen.tsx and the .as-shot aspect-ratio in src/styles.css.
 VIEWPORT = {"width": 1280, "height": 720}
-START_URL = "https://www.rbcroyalbank.com/"
+# Decoy's own start page (backend/standby.html), served inside Chrome so Back can return to it. The
+# host never reaches the network: the context route answers it. The address bar shows START_LABEL.
+START_URL = "https://decoy.local/standby"
+START_LABEL = "decoy://standby"
+STANDBY_HTML = (Path(__file__).parent / "standby.html").read_text(encoding="utf-8")
 SEND_TIMEOUT_S = 5  # a client that can't take a message this long is dropped
 MAX_QUEUED_FRAMES = 2  # a slow client skips frames instead of falling behind
 CURSOR_MOVE_S = 0.75  # matches the frontend cursor transition
+
+# Cookie banners cover the bottom of the screen (RBC's covers about a third). Hide them instead of
+# clicking: RBC's only buttons are "Accept All", "Manage Settings" and an X whose label says closing
+# accepts all cookies. Hiding makes no consent choice either way. Containers of common consent tools:
+COOKIE_BANNERS = [
+    "#onetrust-consent-sdk",  # OneTrust (RBC)
+    "#CybotCookiebotDialog",  # Cookiebot
+    "#truste-consent-track",  # TrustArc
+    ".qc-cmp2-container",  # Quantcast
+    "#didomi-host",  # Didomi
+]
+HIDE_COOKIE_BANNERS = """(() => {
+  const add = () => {
+    const style = document.createElement('style');
+    style.textContent = `%s { display: none !important; }`;
+    (document.head || document.documentElement).appendChild(style);
+  };
+  // Init scripts can run before the page has an <html> element; wait for it then.
+  if (document.documentElement) add();
+  else document.addEventListener('DOMContentLoaded', add, {once: true});
+})();""" % ", ".join(COOKIE_BANNERS)
 
 clients: dict[WebSocket, asyncio.Queue] = {}  # each client has its own outbox, so none can stall the rest
 page = None
 lock: asyncio.Lock | None = None  # one run drives the page at a time
 inputs: asyncio.Queue | None = None  # a person's clicks and keys, applied strictly in order
 run_id = "live"  # frames follow the latest run
-last = {"address": "", "frame": None}
+last = {"address": "", "frame": None, "caption": None}  # replayed to a screen that connects later
 _pw = _chrome = _ctx = _worker = None
 _opens = 0
 
@@ -63,6 +89,8 @@ def add_client(ws: WebSocket) -> asyncio.Task:
         outbox.put_nowait({"id": run_id, "type": "address", "text": last["address"], "typing": False})
     if last["frame"]:
         outbox.put_nowait({"id": run_id, "type": "frame", "data": last["frame"]})
+    if last["caption"]:
+        outbox.put_nowait({"id": run_id, "type": "caption", "text": last["caption"]})
     clients[ws] = outbox
     return asyncio.create_task(_sender(ws, outbox))
 
@@ -79,11 +107,13 @@ def send_to(ws: WebSocket, msg: dict) -> None:
 
 def say(text: str) -> None:
     """Caption under Decoy's screen: what the browser is doing right now."""
+    last["caption"] = text
     broadcast({"type": "caption", "text": text})
 
 
 def finish(rid: str, result: dict) -> None:
     """End a run on the screen: its summary becomes the caption."""
+    last["caption"] = result.get("summary")
     if result.get("ok", True):
         broadcast({"type": "result", "result": result}, rid)
     else:
@@ -102,7 +132,14 @@ def next_id() -> str:
 
 def full_url(url: str) -> str:
     url = url.strip()
+    if url == START_LABEL:
+        return START_URL
     return url if url.startswith(("http://", "https://")) else f"https://{url}"
+
+
+def shown(url: str) -> str:
+    """The address bar text for a URL: the start page reads decoy://standby."""
+    return START_LABEL if url == START_URL else url
 
 
 @asynccontextmanager
@@ -118,7 +155,7 @@ async def navigate(url: str) -> bool:
     """Load a page while holding a session. Returns False if it didn't load (e.g. the domain doesn't exist)."""
     url = full_url(url)
     broadcast({"type": "view", "mode": "screen"})
-    broadcast({"type": "address", "text": url, "typing": False})
+    broadcast({"type": "address", "text": shown(url), "typing": False})
     broadcast({"type": "loading", "on": True})
     try:
         # Two tries: a page's own late redirect (RBC's homepage does one) can interrupt the first.
@@ -137,13 +174,20 @@ async def navigate(url: str) -> bool:
 async def open_page(url: str, rid: str = "live") -> dict:
     """Open a page as one run: a person's address bar, the manual /browser/open, or a client's open_page."""
     async with session(rid):
-        say(f"Opening {full_url(url)}")
+        say(f"Opening {shown(full_url(url))}")
         if not await navigate(url):
-            result = {"ok": False, "summary": f"Couldn't load {full_url(url)}", "url": full_url(url)}
+            result = {"ok": False, "summary": f"Couldn't load {shown(full_url(url))}", "url": full_url(url)}
         else:
             result = {"ok": True, "summary": f"Opened {await page.title() or page.url}", "url": page.url}
     finish(rid, result)
     return result
+
+
+async def standby() -> None:
+    """Show Decoy's start page, quietly: no "Opening…" caption or result, just the waiting line."""
+    async with session("live"):
+        await navigate(START_URL)
+        say("Waiting for something to check.")
 
 
 async def find(pattern: str) -> dict | None:
@@ -166,7 +210,7 @@ async def find(pattern: str) -> dict | None:
           // Really on screen: not hidden, has a size, and nothing else (a closed menu, a cookie banner) covers it.
           const seen = (el, range) => {
             if (el.checkVisibility && !el.checkVisibility({checkOpacity: true, checkVisibilityCSS: true})) return false;
-            el.scrollIntoView({block: 'center'});
+            el.scrollIntoView({block: 'center', behavior: 'instant'});  // pages with smooth scrolling would still be moving
             const r = range.getBoundingClientRect();
             if (r.width < 1 || r.height < 1 || r.bottom < 0 || r.top > innerHeight) return false;
             const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
@@ -189,7 +233,7 @@ async def find(pattern: str) -> dict | None:
             const mark = document.createElement('mark');
             mark.style.cssText = 'background:rgba(255,91,55,.22);outline:3px solid #ff5b37;border-radius:3px;color:inherit;padding:0 2px';
             range.surroundContents(mark);
-            mark.scrollIntoView({block: 'center'});
+            mark.scrollIntoView({block: 'center', behavior: 'instant'});
             const r = mark.getBoundingClientRect();
             return {text: m[0], context: context(el, m[0]), box: {x: r.x, y: r.y, width: r.width, height: r.height}};
           }
@@ -272,12 +316,14 @@ async def start() -> None:
     # own pages ("This site can't be reached") don't follow the laptop's system language.
     _chrome = await _pw.chromium.launch(channel="chrome", headless=True, args=["--lang=en-CA"])
     ctx = _ctx = await _chrome.new_context(viewport=VIEWPORT, locale="en-CA")
+    await ctx.add_init_script(HIDE_COOKIE_BANNERS)  # every page and frame, before its own scripts
     page = await ctx.new_page()
 
     def on_nav(frame) -> None:
-        if frame == page.main_frame:
-            last["address"] = frame.url
-            broadcast({"type": "address", "text": frame.url, "typing": False})
+        # Chrome's "site can't be reached" page is chrome-error://…; keep the address that was tried.
+        if frame == page.main_frame and not frame.url.startswith("chrome-error://"):
+            last["address"] = shown(frame.url)
+            broadcast({"type": "address", "text": shown(frame.url), "typing": False})
 
     page.on("framenavigated", on_nav)
 
@@ -291,6 +337,9 @@ async def start() -> None:
     # Only tabs the streamed page opens; the hidden warm-up tab must not be treated as one.
     page.on("popup", lambda p: asyncio.create_task(on_popup(p)))
 
+    # Answer the start page from here; the request never leaves the browser.
+    await ctx.route(START_URL, lambda route: route.fulfill(status=200, content_type="text/html", body=STANDBY_HTML))
+
     cdp = await ctx.new_cdp_session(page)
 
     def on_frame(params: dict) -> None:
@@ -303,7 +352,7 @@ async def start() -> None:
         "Page.startScreencast",
         {"format": "jpeg", "quality": 60, "maxWidth": VIEWPORT["width"], "maxHeight": VIEWPORT["height"]},
     )
-    asyncio.create_task(open_page(START_URL))
+    asyncio.create_task(standby())
     _worker = asyncio.create_task(_input_worker())
 
 

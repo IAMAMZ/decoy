@@ -45,7 +45,7 @@ Check it's connected: Decoy's screen says **"live · real Chrome"** in its top-r
 
 **Call** (`?mic`): press **Enter** to start, hold **Space** to talk as the scammer, hold **Y** to talk as Margaret, **Shift+T** forces the takeover, **Esc** ends the call.
 
-**Decoy's screen** (`&browser`): it works like a normal browser.
+**Decoy's screen** (`&browser`): it starts on Decoy's own standby page (`decoy://standby`, `backend/standby.html`) and only goes to a bank's site when a check runs. Otherwise it works like a normal browser.
 
 - Type a URL in the address bar and press Enter.
 - Click, double-click, hover and scroll on the page.
@@ -53,6 +53,8 @@ Check it's connected: Decoy's screen says **"live · real Chrome"** in its top-r
 - ← → ↻ for back, forward and reload.
 
 Before the call starts, the "Start call" card covers the page; start the call to use the browser.
+
+Cookie banners are hidden in Decoy's Chrome, not clicked: no consent is given or refused. RBC's banner has no reject option (its X says closing accepts all cookies), and it covered the bottom third of the screen. The list of hidden banner containers is `COOKIE_BANNERS` in `backend/browser.py`.
 
 Open a page from a script or terminal (for testing, until the agent drives the browser):
 

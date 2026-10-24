@@ -4,6 +4,9 @@
 //   monitoring --score >= 0.6--> protecting (look up caller, verify the number, freeze transfer;
 //   the family alert fires on its own) --score >= 0.8, or a hard flag at >= 0.6--> takeover
 //
+// With the real browser (?browser), the number is verified as soon as the caller names a bank we can
+// check (RBC), not at protecting: the screen shows it early and protect() reuses the result.
+//
 // Manual overrides (Shift+T / Shift+S) go through the same mode changes, so they run the same steps.
 import { useEffect, useRef } from 'react';
 import type { CallState } from '../events/reducer';
@@ -40,6 +43,7 @@ type Run = {
   flags: Set<string>;
   claimedOrg: string;
   intel: Set<string>;
+  numberCheck: Promise<Record<string, unknown>> | null; // verify_caller_number, run once per call
   policyChecked: boolean;
   protect: Promise<void> | null;
   takeoverStarted: boolean;
@@ -57,6 +61,11 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
     run.current && inject({ type, call_id: run.current.callId, ts: Date.now(), data } as CallEvent);
   const tool = (name: string, args: Record<string, unknown>, impl: (id: string) => Promise<Record<string, unknown>> | Record<string, unknown>) =>
     tools.runTool(inject, run.current!.callId, name, args, impl);
+  // Real check in Chrome (takes a few seconds): is the caller ID the bank's official number?
+  const verifyNumber = () => {
+    const caller = live.current.callerNumber ?? '';
+    return tool('verify_caller_number', { number: caller }, (id) => tools.realCheck('verify_caller_number', { number: caller }, id));
+  };
 
   // ---- call lifecycle ----
   useEffect(() => {
@@ -69,6 +78,7 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
       flags: new Set(),
       claimedOrg: '',
       intel: new Set(),
+      numberCheck: null,
       policyChecked: false,
       protect: null,
       takeoverStarted: false,
@@ -129,6 +139,9 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
     if (r.ended || r.callId !== run.current?.callId) return;
     // "RBC fraud prevention team" -> "RBC" when it's a bank we have an official record for.
     if (a?.claimed_org) r.claimedOrg = officialFor(a.claimed_org)?.org ?? a.claimed_org;
+    // The caller just named a bank we can check: verify their number right away, in the background,
+    // instead of waiting for the score to reach protecting. protect() reuses this result.
+    if (bridge.connected && !r.numberCheck && officialFor(r.claimedOrg)) r.numberCheck = verifyNumber();
     // The brain sometimes guesses concrete tactics nobody mentioned; only trust those when the words were said.
     const brainFlags = (a?.flags ?? []).filter((f) => !NEEDS_WORDS.includes(f) || words.includes(f));
     const turnFlags = [...new Set([...brainFlags, ...words])];
@@ -168,10 +181,8 @@ export function useAgent(state: CallState, inject: (ev: CallEvent) => void) {
     await tool('lookup_caller', { number: caller }, () => tools.lookupCaller(caller));
     const org = r.claimedOrg;
     if (bridge.connected) {
-      // Real check in Chrome (takes a few seconds): runs while the transfer is frozen.
-      const verifying = tool('verify_caller_number', { number: caller }, (id) =>
-        tools.realCheck('verify_caller_number', { number: caller }, id),
-      );
+      // Usually already started when the caller named the bank; otherwise start it now, while the transfer is frozen.
+      const verifying = (r.numberCheck ??= verifyNumber());
       await freezePending(r);
       await verifying;
       return;
