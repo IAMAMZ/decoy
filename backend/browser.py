@@ -380,7 +380,8 @@ async def start() -> None:
     cdp.on("Page.screencastFrame", on_frame)
     await cdp.send(
         "Page.startScreencast",
-        {"format": "jpeg", "quality": 60, "maxWidth": VIEWPORT["width"], "maxHeight": VIEWPORT["height"]},
+        # ~15 fps: any animation (the standby dot) otherwise streams 60 fps, which pins the CPU without a GPU
+        {"format": "jpeg", "quality": 60, "maxWidth": VIEWPORT["width"], "maxHeight": VIEWPORT["height"], "everyNthFrame": 4},
     )
     asyncio.create_task(standby())
     _worker = asyncio.create_task(_input_worker())

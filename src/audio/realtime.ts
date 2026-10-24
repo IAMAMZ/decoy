@@ -2,8 +2,8 @@
 // Auth: mint a short-lived client secret, then pass it as a WebSocket subprotocol,
 // because browsers can't set an Authorization header on a WebSocket.
 //
-// Demo-laptop only: VITE_BOSON_API_KEY ends up in the page. Never deploy this build publicly;
-// move secret minting to a server first.
+// The key never reaches the page: /api/boson is a proxy that adds it (vite.config.ts in dev,
+// backend/routes/boson.py when deployed).
 
 export type RealtimeHandlers = {
   onCommitted: (itemId: string) => void;
@@ -15,16 +15,14 @@ export type RealtimeHandlers = {
   onClose: () => void;
 };
 
-const API = 'https://api.boson.ai/v1';
+const API = '/api/boson';
 export const REALTIME_URL = 'wss://api.boson.ai/v1/realtime';
 
 /** Short-lived key for one Realtime connection (pass as subprotocol `bai-client-secret.<key>`). */
 export async function mintClientSecret(): Promise<string> {
-  const key = import.meta.env.VITE_BOSON_API_KEY as string | undefined;
-  if (!key) throw new Error('Set VITE_BOSON_API_KEY in .env.local');
   const r = await fetch(`${API}/realtime/client_secrets`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ expires_after: { seconds: 600 } }),
   });
   if (!r.ok) throw new Error(`Boson client secret failed (${r.status}): ${await r.text()}`);

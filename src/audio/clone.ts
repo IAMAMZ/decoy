@@ -1,18 +1,16 @@
 // Instant voice clone of the real customer from their own push-to-talk turns
 // (docs.boson.ai/api-reference/audio/create-a-voice), so Decoy's takeover sounds like them.
 
-const API = 'https://api.boson.ai/v1';
+const API = '/api/boson'; // proxy that adds the key, see realtime.ts
 const RATE = 24000; // matches the mic worklet
 
 /** Registers the turns' PCM16 audio plus its transcript as a Boson voice. Returns the `voice_<id>`. */
 export async function createVoice(pcm: ArrayBuffer[], text: string): Promise<string> {
-  const key = import.meta.env.VITE_BOSON_API_KEY as string | undefined;
-  if (!key) throw new Error('Set VITE_BOSON_API_KEY in .env.local');
   const body = JSON.stringify({ ref_audio: `data:audio/wav;base64,${toBase64(wav(pcm))}`, ref_text: text });
   for (let attempt = 0; ; attempt++) {
     const r = await fetch(`${API}/audio/voices`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body,
     });
     // The voices API rate-limits bursts; a short wait clears it.
