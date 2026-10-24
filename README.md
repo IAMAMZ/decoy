@@ -45,7 +45,7 @@ Check it's connected: Decoy's screen says **"live · real Chrome"** in its top-r
 
 **Call** (`?mic`): press **Enter** to start, hold **Space** to talk as the scammer, hold **Y** to talk as Margaret, **Shift+T** forces the takeover, **Esc** ends the call.
 
-**Decoy's screen** (`&browser`): it works like a normal browser.
+**Decoy's screen** (`&browser`): it starts on Decoy's own standby page (`decoy://standby`, `backend/standby.html`) and only goes to a bank's site when a check runs. Otherwise it works like a normal browser.
 
 - Type a URL in the address bar and press Enter.
 - Click, double-click, hover and scroll on the page.
