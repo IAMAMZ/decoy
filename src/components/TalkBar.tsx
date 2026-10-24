@@ -44,6 +44,7 @@ export function TalkBar() {
       <nav>
         <a href="/?mic">Stage</a>
         <a href="/dashboard?mic">Dashboard</a>
+        <a href="/?mic&browser">Browser</a>
         <a href="/call?mic">Call</a>
       </nav>
       {live ? (

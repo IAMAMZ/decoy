@@ -31,6 +31,13 @@ async def browser_ws(ws: WebSocket) -> None:
         browser.remove_client(ws, task)
 
 
+@router.post("/standby")
+async def standby_endpoint() -> dict:
+    """Back to Decoy's start page, e.g. when a new call starts, instead of the last call's page."""
+    await browser.standby()
+    return {"ok": True}
+
+
 @router.post("/open")
 async def open_endpoint(url: str) -> dict:
     """Manual trigger for testing: curl -X POST "http://127.0.0.1:8001/browser/open?url=example.com"."""

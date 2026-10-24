@@ -10,14 +10,15 @@ export function PhoneScreen({ state, inject }: { state: CallState; inject: (ev: 
   const { status, mode, tools, avatar } = state;
   const elapsed = state.startedAt ? (state.endedAt ?? now) - state.startedAt : 0;
   const doneTool = (name: string) => tools.find((t) => t.tool === name && t.status === 'done');
-  const verify = doneTool('verify_institution');
-  const realVerify = doneTool('verify_caller_number'); // the real-browser check is RBC-specific
+  const verify = doneTool('verify_institution'); // the scripted replay's check
+  // The investigator's check of the caller's number, on the live web.
+  const callerCheck = tools.find((t) => t.tool === 'investigate' && t.args.kind === 'caller' && t.status === 'done');
   const frozen = doneTool('freeze_transaction')?.result as { amount?: number } | undefined;
   const notified = doneTool('notify_family');
-  const claimed = (verify?.args.claimed_org as string | undefined) ?? (realVerify ? 'RBC' : null);
+  const claimed = ((verify ?? callerCheck)?.args.claimed_org as string | undefined) ?? null;
   const notReally =
     (verify && (verify.result as { match?: boolean })?.match === false) ||
-    (realVerify && (realVerify.result as { verdict?: string })?.verdict === 'mismatch');
+    (callerCheck && (callerCheck.result as { verdict?: string })?.verdict === 'contradicted');
   const checks = [
     notReally && `Not really ${claimed}`,
     frozen && `$${(frozen.amount ?? 0).toLocaleString('en-US')} transfer paused`,
